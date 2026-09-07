@@ -1,0 +1,275 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <title>Rádio Player Online</title>
+    <meta name="description" content="Ouça suas rádios online favoritas. Busque, favorite, organize e instale como app.">
+    <link rel="stylesheet" href="style.css">
+    <link rel="manifest" href="manifest.json">
+    <meta name="theme-color" content="#0f172a"/>
+    <script src="https://cdn.jsdelivr.net/npm/hls.js@1/dist/hls.min.js"></script>
+    <script src="radioData.js" defer></script>
+</head>
+<body>
+    <div class="app">
+        <header class="topbar">
+            <div class="topbar__brand">
+                <span class="topbar__logo" aria-hidden="true">📻</span>
+                <span class="topbar__name">Rádio Player</span>
+            </div>
+            <div class="topbar__actions">
+                <button id="themeToggleButton" class="icon-btn" type="button" title="Alternar tema" aria-label="Alternar tema claro/escuro">🌙</button>
+                <button id="settingsButton" class="icon-btn" type="button" title="Configurações" aria-label="Abrir configurações">⚙️</button>
+            </div>
+        </header>
+
+        <main class="app__main">
+            <!-- BUSCA -->
+            <section class="card" id="searchSection">
+                <h2 class="card__title"><span class="card__icon" aria-hidden="true">🔍</span> Buscar estações</h2>
+                <div class="field-row">
+                    <input type="search" id="searchInput" class="input input--grow" placeholder="Nome da rádio, gênero, país..." autocomplete="off" enterkeyhint="search">
+                    <button id="searchButton" class="btn btn--primary" type="button">Buscar</button>
+                </div>
+                <button class="linkish" id="toggleFiltersButton" type="button" aria-expanded="false" aria-controls="searchFilters">Filtros avançados <span class="chev" aria-hidden="true">▸</span></button>
+                <div class="filters hidden-section" id="searchFilters">
+                    <label class="filters__field">
+                        <span>País</span>
+                        <select id="filterCountry" class="input">
+                            <option value="">Todos os países</option>
+                            <option value="BR">Brasil</option>
+                            <option value="PT">Portugal</option>
+                            <option value="US">Estados Unidos</option>
+                            <option value="GB">Reino Unido</option>
+                            <option value="ES">Espanha</option>
+                            <option value="FR">França</option>
+                            <option value="DE">Alemanha</option>
+                            <option value="IT">Itália</option>
+                            <option value="AR">Argentina</option>
+                            <option value="CL">Chile</option>
+                            <option value="UY">Uruguai</option>
+                            <option value="PY">Paraguai</option>
+                            <option value="MX">México</option>
+                            <option value="CO">Colômbia</option>
+                            <option value="PE">Peru</option>
+                            <option value="CA">Canadá</option>
+                            <option value="NL">Países Baixos</option>
+                            <option value="BE">Bélgica</option>
+                            <option value="CH">Suíça</option>
+                            <option value="AT">Áustria</option>
+                            <option value="IE">Irlanda</option>
+                            <option value="SE">Suécia</option>
+                            <option value="NO">Noruega</option>
+                            <option value="DK">Dinamarca</option>
+                            <option value="FI">Finlândia</option>
+                            <option value="PL">Polônia</option>
+                            <option value="GR">Grécia</option>
+                            <option value="JP">Japão</option>
+                            <option value="AU">Austrália</option>
+                            <option value="NZ">Nova Zelândia</option>
+                            <option value="ZA">África do Sul</option>
+                            <option value="AO">Angola</option>
+                            <option value="MZ">Moçambique</option>
+                        </select>
+                    </label>
+                    <label class="filters__field">
+                        <span>Gênero / tag</span>
+                        <input type="text" id="filterTag" class="input" placeholder="rock, jazz, news, 80s..." list="commonTags" autocomplete="off">
+                    </label>
+                    <label class="filters__field">
+                        <span>Idioma</span>
+                        <input type="text" id="filterLanguage" class="input" placeholder="portuguese, english, spanish..." autocomplete="off">
+                    </label>
+                    <div class="filters__actions">
+                        <button id="clearFiltersButton" class="btn btn--ghost btn--sm" type="button">Limpar filtros</button>
+                    </div>
+                </div>
+                <datalist id="commonTags">
+                    <option value="rock"></option><option value="pop"></option><option value="jazz"></option>
+                    <option value="classical"></option><option value="news"></option><option value="talk"></option>
+                    <option value="sports"></option><option value="dance"></option><option value="electronic"></option>
+                    <option value="80s"></option><option value="90s"></option><option value="oldies"></option>
+                    <option value="mpb"></option><option value="sertanejo"></option><option value="gospel"></option>
+                    <option value="reggae"></option><option value="hip hop"></option><option value="lofi"></option>
+                    <option value="country"></option><option value="blues"></option>
+                </datalist>
+                <div id="searchResults" class="station-list" aria-live="polite">
+                    <p class="empty-state">Busque por nome ou use os filtros avançados para descobrir estações.</p>
+                </div>
+            </section>
+
+            <!-- ADICIONAR MANUALMENTE -->
+            <section class="card">
+                <button class="card__toggle" type="button" data-target="manualAddContent" aria-expanded="false">
+                    <span class="card__toggle-label"><span class="card__icon" aria-hidden="true">➕</span> Adicionar manualmente</span>
+                    <span class="chev" aria-hidden="true">▸</span>
+                </button>
+                <div id="manualAddContent" class="card__body hidden-section">
+                    <div class="stack">
+                        <input type="text" id="manualName" class="input" placeholder="Nome da rádio" autocomplete="off">
+                        <input type="url" id="manualUrl" class="input" placeholder="URL do stream (http:// ou https://)" autocomplete="off" inputmode="url">
+                        <button id="manualAddButton" class="btn btn--primary" type="button">Adicionar e tocar</button>
+                    </div>
+                </div>
+            </section>
+
+            <!-- FAVORITOS -->
+            <section class="card">
+                <button class="card__toggle" type="button" data-target="favoritesContent" aria-expanded="false">
+                    <span class="card__toggle-label"><span class="card__icon" aria-hidden="true">⭐</span> Favoritos</span>
+                    <span class="chev" aria-hidden="true">▸</span>
+                </button>
+                <div id="favoritesContent" class="card__body hidden-section">
+                    <div class="row-actions">
+                        <button id="manageCategoriesButton" class="btn btn--ghost btn--sm" type="button">🗂️ Gerenciar categorias</button>
+                    </div>
+                    <div id="favoritesList" class="favorites"></div>
+                    <div class="row-actions row-actions--wrap">
+                        <button id="exportFavoritesButton" class="btn btn--secondary btn--sm" type="button">⬇️ Exportar</button>
+                        <button id="importFavoritesButton" class="btn btn--secondary btn--sm" type="button">⬆️ Importar</button>
+                        <input type="file" id="importFile" accept=".json,application/json" hidden>
+                    </div>
+                </div>
+            </section>
+
+            <!-- RECENTES -->
+            <section class="card">
+                <button class="card__toggle" type="button" data-target="recentsContent" aria-expanded="false">
+                    <span class="card__toggle-label"><span class="card__icon" aria-hidden="true">🕘</span> Tocadas recentemente</span>
+                    <span class="chev" aria-hidden="true">▸</span>
+                </button>
+                <div id="recentsContent" class="card__body hidden-section">
+                    <div id="recentsList" class="station-list"></div>
+                    <div class="row-actions">
+                        <button id="clearRecentsButton" class="btn btn--ghost btn--sm" type="button">Limpar histórico</button>
+                    </div>
+                </div>
+            </section>
+
+            <!-- TOP -->
+            <section class="card">
+                <h2 class="card__title"><span class="card__icon" aria-hidden="true">🏆</span> Top mais ouvidas</h2>
+                <div id="topRadiosButtons" class="top-radios"></div>
+            </section>
+
+            <!-- ESTATÍSTICAS -->
+            <section class="card">
+                <button class="card__toggle" type="button" data-target="analyticsContent" aria-expanded="false">
+                    <span class="card__toggle-label"><span class="card__icon" aria-hidden="true">📊</span> Estatísticas</span>
+                    <span class="chev" aria-hidden="true">▸</span>
+                </button>
+                <div id="analyticsContent" class="card__body hidden-section">
+                    <div class="tabs">
+                        <button id="clicksTab" class="tab is-active" type="button">Top clicks</button>
+                        <button id="timeTab" class="tab" type="button">Top tempo</button>
+                    </div>
+                    <div id="analyticsResults" class="analytics-results"></div>
+                    <div class="row-actions row-actions--wrap">
+                        <button id="exportAnalyticsButton" class="btn btn--secondary btn--sm" type="button">Exportar dados</button>
+                        <button id="clearAnalyticsButton" class="btn btn--ghost btn--sm" type="button">Limpar dados</button>
+                    </div>
+                </div>
+            </section>
+
+            <div id="installInstructions" class="install-cta" hidden>
+                <button id="installAppButton" class="btn btn--primary" type="button">📲 Instalar o app Rádio</button>
+            </div>
+        </main>
+    </div>
+
+    <!-- PLAYER FIXO -->
+    <div id="playerBar" class="player" data-state="idle">
+        <div id="playerPanel" class="player__panel hidden-section">
+            <div class="player__row">
+                <button id="muteButton" class="icon-btn" type="button" title="Silenciar" aria-label="Silenciar">🔊</button>
+                <button id="volumeDown" class="icon-btn" type="button" title="Diminuir volume" aria-label="Diminuir volume">−</button>
+                <input type="range" id="volumeControl" min="0" max="1" step="0.05" value="1" aria-label="Volume">
+                <button id="volumeUp" class="icon-btn" type="button" title="Aumentar volume" aria-label="Aumentar volume">+</button>
+                <span id="volumeDisplay" class="player__vol">100%</span>
+            </div>
+            <div class="player__row player__row--sleep">
+                <span class="player__row-label" aria-hidden="true">⏱️ Desligar em</span>
+                <div class="chips" id="sleepChips" role="group" aria-label="Sleep timer">
+                    <button class="chip" type="button" data-min="15">15 min</button>
+                    <button class="chip" type="button" data-min="30">30 min</button>
+                    <button class="chip" type="button" data-min="45">45 min</button>
+                    <button class="chip" type="button" data-min="60">1 h</button>
+                    <button class="chip is-active" type="button" data-min="0">Off</button>
+                </div>
+                <span id="sleepStatus" class="player__sleep-status" aria-live="polite"></span>
+            </div>
+        </div>
+        <div class="player__main">
+            <div class="player__eq" aria-hidden="true"><span></span><span></span><span></span><span></span></div>
+            <div class="player__meta">
+                <div id="nowPlaying" class="player__title">Nenhuma rádio tocando</div>
+                <div id="nowPlayingSub" class="player__sub"></div>
+            </div>
+            <div class="player__controls">
+                <button id="playButton" class="icon-btn icon-btn--lg" type="button" disabled aria-label="Tocar">▶</button>
+                <button id="stopButton" class="icon-btn icon-btn--lg" type="button" disabled aria-label="Parar">■</button>
+                <button id="playerExpandButton" class="icon-btn" type="button" aria-label="Volume e timer" aria-expanded="false" aria-controls="playerPanel">▴</button>
+            </div>
+        </div>
+        <audio id="audioPlayer" hidden></audio>
+    </div>
+
+    <!-- CONFIGURAÇÕES -->
+    <div id="settingsSheet" class="sheet" hidden>
+        <div class="sheet__backdrop" data-close-sheet></div>
+        <div class="sheet__panel" role="dialog" aria-modal="true" aria-label="Configurações">
+            <div class="sheet__header">
+                <h2>Configurações</h2>
+                <button class="icon-btn" type="button" data-close-sheet aria-label="Fechar">✕</button>
+            </div>
+            <div class="sheet__body">
+                <div class="setting">
+                    <span class="setting__label">Cor de destaque</span>
+                    <div class="chips" id="titleColorChips" role="group" aria-label="Cor de destaque">
+                        <button class="chip" type="button" data-color="default">Padrão</button>
+                        <button class="chip" type="button" data-color="blue">Azul</button>
+                        <button class="chip" type="button" data-color="green">Verde</button>
+                        <button class="chip" type="button" data-color="purple">Roxo</button>
+                        <button class="chip" type="button" data-color="red">Vermelho</button>
+                        <button class="chip" type="button" data-color="orange">Laranja</button>
+                    </div>
+                </div>
+                <div class="setting">
+                    <span class="setting__label">Tema</span>
+                    <button id="themeToggleButton2" class="btn btn--ghost btn--sm" type="button">Alternar claro/escuro</button>
+                </div>
+                <details class="setting setting--about">
+                    <summary>Sobre o projeto</summary>
+                    <div class="about-content">
+                        <h3>📻 Rádio Player Online <span class="about-version">v3.0</span></h3>
+                        <p>Um player de rádio web para descobrir, tocar e organizar estações de rádio de todo o mundo. Funciona offline como app instalável (PWA).</p>
+                        <h4>Recursos</h4>
+                        <ul>
+                            <li>🔍 Busca com filtros por país, gênero e idioma</li>
+                            <li>⭐ Favoritos com categorias gerenciáveis</li>
+                            <li>🕘 Histórico de tocadas recentemente</li>
+                            <li>⏱️ Sleep timer com fade-out</li>
+                            <li>🎵 Streams HLS e formatos tradicionais</li>
+                            <li>🌙 Tema claro/escuro e cores personalizáveis</li>
+                            <li>📊 Estatísticas de uso locais (IndexedDB)</li>
+                        </ul>
+                        <h4>Licença</h4>
+                        <p>Distribuído sob <a href="https://creativecommons.org/licenses/by-nc/4.0/" target="_blank" rel="noopener">CC BY-NC 4.0</a> — compartilhe e adapte com atribuição, para uso não comercial.</p>
+                        <p class="about-footer">Desenvolvido com ❤️ por <strong>Felipe</strong> ·
+                            <a href="https://github.com/felipefm" target="_blank" rel="noopener">GitHub</a>
+                        </p>
+                    </div>
+                </details>
+            </div>
+        </div>
+    </div>
+
+    <div id="toastNotification" class="toast"><span id="toastMessage"></span></div>
+    <div id="modalRoot"></div>
+
+    <script src="wakeLock.js" defer></script>
+    <script src="app.js" defer></script>
+    <script data-goatcounter="https://felipe.goatcounter.com/count" async src="//gc.zgo.at/count.js"></script>
+</body>
+</html>

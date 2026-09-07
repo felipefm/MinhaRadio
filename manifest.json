@@ -1,0 +1,40 @@
+{
+    "name": "Rádio Player Online",
+    "short_name": "Rádio",
+    "description": "Ouça suas rádios online favoritas. Busque com filtros, favorite por categorias e instale como app.",
+    "start_url": "./index.html",
+    "scope": "./",
+    "id": "./",
+    "display": "standalone",
+    "background_color": "#0b1220",
+    "theme_color": "#0f172a",
+    "orientation": "portrait-primary",
+    "categories": ["music", "entertainment"],
+    "lang": "pt-BR",
+    "icons": [
+        {
+            "src": "icons/icon-192x192.png",
+            "sizes": "192x192",
+            "type": "image/png",
+            "purpose": "any"
+        },
+        {
+            "src": "icons/icon-512x512.png",
+            "sizes": "512x512",
+            "type": "image/png",
+            "purpose": "any"
+        },
+        {
+            "src": "icons/icon-192x192.png",
+            "sizes": "192x192",
+            "type": "image/png",
+            "purpose": "maskable"
+        },
+        {
+            "src": "icons/icon-512x512.png",
+            "sizes": "512x512",
+            "type": "image/png",
+            "purpose": "maskable"
+        }
+    ]
+}
