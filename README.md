@@ -55,8 +55,10 @@ Estatísticas) cobre só o IndexedDB. Não há backup unificado.
 
 ## Limitações conhecidas
 
-- Stream `http://` não toca em página servida por `https://` (bloqueio de
-  conteúdo misto do navegador) — comum em rádios pequenas.
+- Stream só disponível em `http://` não toca em página servida por `https://`
+  (bloqueio de conteúdo misto do navegador) — comum em rádios pequenas. O player
+  tenta automaticamente a versão `https://` e a URL alternativa da estação antes
+  de desistir, então isso só afeta rádios sem HTTPS de verdade.
 - Áudio e streams HLS sempre exigem rede; offline entrega apenas a interface.
 - Estatísticas, favoritos e configurações são **por navegador/dispositivo** —
   não sincronizam. Migre com exportar/importar.
