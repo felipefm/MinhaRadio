@@ -135,6 +135,13 @@
         setTimeout(() => URL.revokeObjectURL(url), 1000);
     }
 
+    // Em página HTTPS, converte http:// -> https:// (evita bloqueio de conteúdo misto)
+    function preferHttps(url) {
+        return url && location.protocol === "https:" && url.startsWith("http://")
+            ? "https://" + url.slice(7)
+            : url;
+    }
+
     function isValidHttpUrl(str) {
         try {
             const u = new URL(str);
@@ -607,9 +614,10 @@
         if (station.favicon) {
             favEl = document.createElement("img");
             favEl.className = "station-favicon";
-            favEl.src = station.favicon;
             favEl.alt = "";
             favEl.loading = "lazy";
+            favEl.referrerPolicy = "no-referrer";
+            favEl.src = preferHttps(station.favicon);
             favEl.addEventListener("error", () => {
                 const ph = document.createElement("span");
                 ph.className = "station-favicon-ph";
@@ -985,12 +993,8 @@
         const add = (u) => {
             if (u && typeof u === "string" && !out.includes(u)) out.push(u);
         };
-        const secure = (u) =>
-            u && location.protocol === "https:" && u.startsWith("http://")
-                ? "https://" + u.slice(7)
-                : u;
-        add(secure(station.url_resolved));
-        add(secure(station.url));
+        add(preferHttps(station.url_resolved));
+        add(preferHttps(station.url));
         add(station.url_resolved);
         add(station.url);
         return out;
