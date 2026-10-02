@@ -1050,7 +1050,7 @@
         if (window.radioData) window.radioData.recordClick(station);
 
         nowPlaying.textContent = `Carregando: ${station.name}…`;
-        nowPlayingSub.textContent = stationDetails(station);
+        setMarqueeText(nowPlayingSub, stationDetails(station));
         setPlayerState("loading");
         updatePlayButtons(false);
 
@@ -1060,7 +1060,7 @@
             if (token !== playToken || currentStation !== station) return;
             streamSettling = false;
             nowPlaying.textContent = station.name;
-            nowPlayingSub.textContent = stationDetails(station);
+            setMarqueeText(nowPlayingSub, stationDetails(station));
             setPlayerState("playing");
             updatePlayButtons(true);
             document.title = `▶ ${station.name} · Rádio Player`;
@@ -1164,7 +1164,7 @@
         if (!silent) {
             cancelSleepTimer(false);
             nowPlaying.textContent = "Nenhuma rádio tocando";
-            nowPlayingSub.textContent = "";
+            setMarqueeText(nowPlayingSub, "");
             setPlayerState("idle");
         }
     }
@@ -1205,13 +1205,55 @@
         }
     }
 
+    // Letreiro: só anima quando o texto não cabe no espaço disponível.
+    // `el` é o "visor" (overflow:hidden); por dentro ele ganha uma faixa
+    // (.marquee__track) que é a parte realmente medida e animada.
+    function setMarqueeText(el, text) {
+        if (!el) return;
+        let track = el.querySelector(".marquee__track");
+        if (!track) {
+            track = document.createElement("span");
+            track.className = "marquee__track";
+            el.textContent = "";
+            el.appendChild(track);
+        }
+        track.classList.remove("is-scrolling");
+        track.style.removeProperty("--marquee-shift");
+        track.style.removeProperty("--marquee-duration");
+        const oldClone = track.querySelector(".marquee__clone");
+        if (oldClone) oldClone.remove();
+        track.textContent = text || "";
+        if (!text) return;
+
+        requestAnimationFrame(() => {
+            if (track.textContent !== text) return; // texto já mudou de novo
+            const mainWidth = track.scrollWidth;
+            if (mainWidth <= el.clientWidth + 1) return;
+
+            const gap = 48;
+            const clone = document.createElement("span");
+            clone.className = "marquee__clone";
+            clone.setAttribute("aria-hidden", "true");
+            clone.style.paddingLeft = gap + "px";
+            clone.textContent = text;
+            track.appendChild(clone);
+
+            const shift = mainWidth + gap;
+            const speed = 45; // px por segundo — ritmo confortável de leitura
+            const duration = Math.max(6, shift / speed);
+            track.style.setProperty("--marquee-shift", `-${shift}px`);
+            track.style.setProperty("--marquee-duration", `${duration}s`);
+            track.classList.add("is-scrolling");
+        });
+    }
+
     function clearNowPlaying() {
         nowPlayingToken++;
         if (carTrackInfo) {
             carTrackInfo.hidden = true;
-            carTrackInfo.textContent = "";
+            setMarqueeText(carTrackInfo, "");
         }
-        if (currentStation) nowPlayingSub.textContent = stationDetails(currentStation) || "";
+        if (currentStation) setMarqueeText(nowPlayingSub, stationDetails(currentStation) || "");
         setArtImage(carArt, null);
         setArtImage(nowPlayingArt, null);
     }
@@ -1237,9 +1279,9 @@
         if (!data || !data.title) {
             if (carTrackInfo) {
                 carTrackInfo.hidden = true;
-                carTrackInfo.textContent = "";
+                setMarqueeText(carTrackInfo, "");
             }
-            if (currentStation === station) nowPlayingSub.textContent = stationDetails(station) || "";
+            if (currentStation === station) setMarqueeText(nowPlayingSub, stationDetails(station) || "");
             setArtImage(carArt, null);
             setArtImage(nowPlayingArt, null);
             return;
@@ -1248,9 +1290,9 @@
         const label = data.artist ? `${data.artist} — ${data.title}` : data.title;
         if (carTrackInfo) {
             carTrackInfo.hidden = false;
-            carTrackInfo.textContent = label;
+            setMarqueeText(carTrackInfo, label);
         }
-        if (currentStation === station) nowPlayingSub.textContent = label;
+        if (currentStation === station) setMarqueeText(nowPlayingSub, label);
 
         let art = data.art || null;
         if (!art) {

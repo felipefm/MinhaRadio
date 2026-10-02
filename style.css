@@ -667,7 +667,6 @@ select.input { cursor: pointer; -webkit-appearance: auto; appearance: auto; }
     color: var(--text-faint);
     white-space: nowrap;
     overflow: hidden;
-    text-overflow: ellipsis;
 }
 
 .player__controls { display: flex; align-items: center; gap: var(--sp-1); flex-shrink: 0; }
@@ -969,9 +968,22 @@ select.input { cursor: pointer; -webkit-appearance: auto; appearance: auto; }
     margin-top: var(--sp-1);
     color: var(--accent);
     overflow: hidden;
-    display: -webkit-box;
-    -webkit-line-clamp: 1;
-    -webkit-box-orient: vertical;
+    white-space: nowrap;
+}
+
+/* ---------- Letreiro (texto que não cabe rola sozinho) ---------- */
+.marquee__track {
+    display: inline-block;
+    white-space: nowrap;
+    will-change: transform;
+}
+.marquee__track.is-scrolling {
+    animation: marquee-scroll var(--marquee-duration, 10s) linear infinite;
+}
+.marquee__clone { display: inline-block; }
+@keyframes marquee-scroll {
+    from { transform: translateX(0); }
+    to { transform: translateX(var(--marquee-shift, -100%)); }
 }
 
 .car-mode__eq {
@@ -1094,6 +1106,8 @@ select.input { cursor: pointer; -webkit-appearance: auto; appearance: auto; }
         transition-duration: 0.001ms !important;
     }
     .player__eq { display: none !important; }
+    .marquee__track.is-scrolling { animation: none !important; transform: none !important; }
+    .marquee__clone { display: none !important; }
     .car-mode__eq { display: none !important; }
     .car-mode__dot { animation: none !important; }
 }
