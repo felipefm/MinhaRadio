@@ -1,6 +1,6 @@
 /* Service Worker — Rádio Player Online v3.1
    Caminhos relativos: funciona em qualquer subpasta / repositório. */
-const CACHE_NAME = 'radio-player-v3.1.0';
+const CACHE_NAME = 'radio-player-v3.1.1';
 
 const ASSETS = [
     './',
@@ -17,9 +17,18 @@ const ASSETS = [
 self.addEventListener('install', (event) => {
     self.skipWaiting();
     event.waitUntil(
-        caches.open(CACHE_NAME)
-            .then((cache) => cache.addAll(ASSETS))
-            .catch((err) => console.error('SW: falha ao cachear o app shell', err))
+        caches.open(CACHE_NAME).then((cache) =>
+            // Busca cada asset ignorando o cache HTTP do navegador (senão o
+            // Service Worker pode guardar uma cópia requentada no meio de uma
+            // atualização). Um asset que falhar não derruba a instalação toda.
+            Promise.all(
+                ASSETS.map((url) =>
+                    fetch(url, { cache: 'reload' })
+                        .then((res) => (res && res.ok ? cache.put(url, res) : null))
+                        .catch(() => {})
+                )
+            )
+        )
     );
 });
 
@@ -42,18 +51,17 @@ self.addEventListener('fetch', (event) => {
     if (url.origin !== self.location.origin) return;
     if (/\.(mp3|aac|m3u8|ts|ogg|opus|pls)(\?|$)/i.test(url.pathname)) return;
 
+    // App shell: rede primeiro (sempre pega a versão mais nova quando online);
+    // o cache só entra como fallback para continuar funcionando offline.
     event.respondWith(
-        caches.match(req).then((cached) => {
-            if (cached) return cached;
-            return fetch(req)
-                .then((res) => {
-                    if (res && res.ok && res.type === 'basic') {
-                        const copy = res.clone();
-                        caches.open(CACHE_NAME).then((cache) => cache.put(req, copy)).catch(() => {});
-                    }
-                    return res;
-                })
-                .catch(() => caches.match('./index.html'));
-        })
+        fetch(req)
+            .then((res) => {
+                if (res && res.ok && res.type === 'basic') {
+                    const copy = res.clone();
+                    caches.open(CACHE_NAME).then((cache) => cache.put(req, copy)).catch(() => {});
+                }
+                return res;
+            })
+            .catch(() => caches.match(req).then((cached) => cached || caches.match('./index.html')))
     );
 });

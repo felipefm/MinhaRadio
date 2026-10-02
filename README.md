@@ -29,7 +29,7 @@ que o Service Worker não registra em `file://`.
 | `app.js` | Tudo o mais: player (HLS.js + `<audio>`), busca e filtros, favoritos e categorias, recentes, sleep timer, modais in-app, tema, PWA. |
 | `radioData.js` | Estatísticas de uso — classe `RadioAnalytics`, isolada, grava em IndexedDB. `window.radioData`. |
 | `wakeLock.js` | Screen Wake Lock. Expõe `window.RadioWakeLock`; o `app.js` chama `request()`/`release()` ao tocar/parar. |
-| `sw.js` | Service Worker: cacheia o app shell (cache-first); nunca cacheia áudio nem a API. Bump em `CACHE_NAME` a cada release. |
+| `sw.js` | Service Worker: cacheia o app shell (rede primeiro, cache como fallback offline); nunca cacheia áudio nem a API. Bump em `CACHE_NAME` a cada release. |
 | `manifest.json` | Metadados do PWA. |
 
 ## Onde ficam os dados
