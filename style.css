@@ -625,6 +625,15 @@ select.input { cursor: pointer; -webkit-appearance: auto; appearance: auto; }
     padding: 0 var(--sp-4);
 }
 
+.player__art {
+    width: 40px;
+    height: 40px;
+    flex-shrink: 0;
+    object-fit: cover;
+    border-radius: var(--r-sm);
+    background: var(--surface-3);
+}
+
 .player__eq {
     display: none;
     align-items: flex-end;

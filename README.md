@@ -1,4 +1,4 @@
-# Rádio Player Online 📻 — v3.2
+# Rádio Player Online 📻 — v3.3
 
 No silêncio que por vezes nos cerca, a busca por uma melodia, uma voz ou uma
 notícia se faz presente. Este projeto nasce como um humilde portal para esse
@@ -31,7 +31,7 @@ que o Service Worker não registra em `file://`.
 | `wakeLock.js` | Screen Wake Lock. Expõe `window.RadioWakeLock`; o `app.js` chama `request()`/`release()` ao tocar/parar. |
 | `sw.js` | Service Worker: cacheia o app shell (rede primeiro, cache como fallback offline); nunca cacheia áudio nem a API. Bump em `CACHE_NAME` a cada release. |
 | `manifest.json` | Metadados do PWA. |
-| `cloudflare-worker/nowplaying.js` | Worker opcional (deploy separado, fora do app shell) que lê o metadado ICY do stream pra mostrar capa/faixa no Modo Carro. Ver seção abaixo. |
+| `cloudflare-worker/nowplaying.js` | Worker opcional (deploy separado, fora do app shell) que lê o metadado ICY do stream pra mostrar capa/faixa na barra fixa e no Modo Carro. Ver seção abaixo. |
 
 ## Onde ficam os dados
 
@@ -66,13 +66,14 @@ Estatísticas) cobre só o IndexedDB. Não há backup unificado.
   não sincronizam. Migre com exportar/importar.
 - Nome da música tocando não é exibido por padrão: streams ICY não expõem
   metadata ao JavaScript, e a API Radio Browser não fornece "now playing".
-  O Modo Carro pode mostrar isso (ver seção abaixo), mas requer um Worker
-  à parte — não é algo que o app faça sozinho, sem configuração.
+  O app pode mostrar isso (ver seção abaixo), mas requer um Worker à parte —
+  não é algo que o app faça sozinho, sem configuração.
 
-## Modo Carro: capa e faixa tocando (opcional)
+## Capa e faixa tocando (opcional)
 
-Por padrão o Modo Carro mostra só nome da estação e tempo de escuta. Pra
-mostrar também "Artista — Faixa" e a capa do álbum, é preciso um pequeno
+Por padrão o player mostra só nome da estação, país/codec/bitrate (na barra
+fixa) e tempo de escuta (no Modo Carro). Pra mostrar também "Artista — Faixa"
+e a capa do álbum — na barra fixa **e** no Modo Carro — é preciso um pequeno
 proxy, porque o navegador não consegue ler o metadado ICY que o Shoutcast/
 Icecast intercala dentro do áudio bruto — isso só dá pra ler no servidor.
 
@@ -84,7 +85,7 @@ Icecast intercala dentro do áudio bruto — isso só dá pra ler no servidor.
 3. Copie a URL do Worker publicado e cole em `NOWPLAYING_WORKER_URL`, no topo
    de `app.js`.
 
-Sem isso configurado (valor padrão: string vazia), o Modo Carro funciona
+Sem isso configurado (valor padrão: string vazia), o app funciona
 normalmente, só sem capa/faixa — nada quebra. Quando a estação não manda
 metadado (rádio falada, por exemplo) ou não dá pra achar a capa, o app
 também cai de volta no comportamento padrão silenciosamente. A busca de capa

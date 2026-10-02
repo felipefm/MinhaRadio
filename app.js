@@ -51,6 +51,7 @@
     const playerExpandButton = $("playerExpandButton");
     const nowPlaying = $("nowPlaying");
     const nowPlayingSub = $("nowPlayingSub");
+    const nowPlayingArt = $("nowPlayingArt");
     const playButton = $("playButton");
     const stopButton = $("stopButton");
     const audioPlayer = $("audioPlayer");
@@ -122,8 +123,8 @@
 
     let carPresets = [];
     let carClockTimer = 0;
-    let carNowPlayingTimer = 0;
-    let carNowPlayingToken = 0;
+    let nowPlayingPollTimer = 0;
+    let nowPlayingToken = 0;
 
     // ============================================================
     // Utilidades
@@ -995,6 +996,19 @@
     // ============================================================
     function setPlayerState(state) {
         playerBar.dataset.state = state;
+
+        if (state === "playing" && currentStation) {
+            refreshNowPlaying(currentStation);
+            clearInterval(nowPlayingPollTimer);
+            nowPlayingPollTimer = setInterval(() => {
+                if (playerBar.dataset.state === "playing" && currentStation) refreshNowPlaying(currentStation);
+            }, 20000);
+        } else {
+            clearInterval(nowPlayingPollTimer);
+            nowPlayingPollTimer = 0;
+            clearNowPlaying();
+        }
+
         updateCarModeUI();
     }
 
@@ -1177,42 +1191,39 @@
         carPlayButton.textContent = isBusy ? "■" : "▶";
         carPlayButton.setAttribute("aria-label", isBusy ? "Parar" : "Tocar");
 
-        if (state === "playing" && currentStation) {
-            fetchCarNowPlaying(currentStation);
-        } else {
-            clearCarNowPlaying();
-        }
-
         refreshCarPresetActive();
     }
 
-    function setCarArt(url) {
-        if (!carArt) return;
+    function setArtImage(el, url) {
+        if (!el) return;
         if (url) {
-            carArt.src = url;
-            carArt.hidden = false;
+            el.src = url;
+            el.hidden = false;
         } else {
-            carArt.removeAttribute("src");
-            carArt.hidden = true;
+            el.removeAttribute("src");
+            el.hidden = true;
         }
     }
 
-    function clearCarNowPlaying() {
-        carNowPlayingToken++;
+    function clearNowPlaying() {
+        nowPlayingToken++;
         if (carTrackInfo) {
             carTrackInfo.hidden = true;
             carTrackInfo.textContent = "";
         }
-        setCarArt(null);
+        if (currentStation) nowPlayingSub.textContent = stationDetails(currentStation) || "";
+        setArtImage(carArt, null);
+        setArtImage(nowPlayingArt, null);
     }
 
     // Busca "tocando agora" (artista/faixa/capa) via o Worker do metadado ICY,
-    // com fallback pra busca de capa na iTunes. Opcional: some de volta ao
-    // comportamento atual se NOWPLAYING_WORKER_URL não estiver configurado ou
-    // a estação não enviar metadado.
-    async function fetchCarNowPlaying(station) {
+    // com fallback pra busca de capa na iTunes. Atualiza tanto a barra fixa do
+    // player quanto o Modo Carro, estando ele aberto ou não. Opcional: some de
+    // volta ao comportamento atual se NOWPLAYING_WORKER_URL não estiver
+    // configurado ou a estação não enviar metadado.
+    async function refreshNowPlaying(station) {
         if (!NOWPLAYING_WORKER_URL || !station || !station.url_resolved) return;
-        const token = ++carNowPlayingToken;
+        const token = ++nowPlayingToken;
 
         let data = null;
         try {
@@ -1221,17 +1232,25 @@
         } catch (_) {
             // metadado é um extra — falha aqui nunca deve afetar o player
         }
-        if (token !== carNowPlayingToken) return;
+        if (token !== nowPlayingToken) return;
 
         if (!data || !data.title) {
-            carTrackInfo.hidden = true;
-            carTrackInfo.textContent = "";
-            setCarArt(null);
+            if (carTrackInfo) {
+                carTrackInfo.hidden = true;
+                carTrackInfo.textContent = "";
+            }
+            if (currentStation === station) nowPlayingSub.textContent = stationDetails(station) || "";
+            setArtImage(carArt, null);
+            setArtImage(nowPlayingArt, null);
             return;
         }
 
-        carTrackInfo.hidden = false;
-        carTrackInfo.textContent = data.artist ? `${data.artist} — ${data.title}` : data.title;
+        const label = data.artist ? `${data.artist} — ${data.title}` : data.title;
+        if (carTrackInfo) {
+            carTrackInfo.hidden = false;
+            carTrackInfo.textContent = label;
+        }
+        if (currentStation === station) nowPlayingSub.textContent = label;
 
         let art = data.art || null;
         if (!art) {
@@ -1243,8 +1262,9 @@
                 if (hit && hit.artworkUrl100) art = hit.artworkUrl100.replace("100x100", "600x600");
             } catch (_) {}
         }
-        if (token !== carNowPlayingToken) return;
-        setCarArt(art);
+        if (token !== nowPlayingToken) return;
+        setArtImage(carArt, art);
+        setArtImage(nowPlayingArt, art);
     }
 
     function refreshCarPresetActive() {
@@ -1336,10 +1356,6 @@
         tickCarClock();
         clearInterval(carClockTimer);
         carClockTimer = setInterval(tickCarClock, 15000);
-        clearInterval(carNowPlayingTimer);
-        carNowPlayingTimer = setInterval(() => {
-            if (playerBar.dataset.state === "playing" && currentStation) fetchCarNowPlaying(currentStation);
-        }, 20000);
     }
 
     function exitCarMode() {
@@ -1347,9 +1363,6 @@
         document.body.style.overflow = "";
         clearInterval(carClockTimer);
         carClockTimer = 0;
-        clearInterval(carNowPlayingTimer);
-        carNowPlayingTimer = 0;
-        clearCarNowPlaying();
     }
 
     // ============================================================
