@@ -1,4 +1,4 @@
-# Rádio Player Online 📻 — v3.1
+# Rádio Player Online 📻 — v3.2
 
 No silêncio que por vezes nos cerca, a busca por uma melodia, uma voz ou uma
 notícia se faz presente. Este projeto nasce como um humilde portal para esse
@@ -31,6 +31,7 @@ que o Service Worker não registra em `file://`.
 | `wakeLock.js` | Screen Wake Lock. Expõe `window.RadioWakeLock`; o `app.js` chama `request()`/`release()` ao tocar/parar. |
 | `sw.js` | Service Worker: cacheia o app shell (rede primeiro, cache como fallback offline); nunca cacheia áudio nem a API. Bump em `CACHE_NAME` a cada release. |
 | `manifest.json` | Metadados do PWA. |
+| `cloudflare-worker/nowplaying.js` | Worker opcional (deploy separado, fora do app shell) que lê o metadado ICY do stream pra mostrar capa/faixa no Modo Carro. Ver seção abaixo. |
 
 ## Onde ficam os dados
 
@@ -63,8 +64,32 @@ Estatísticas) cobre só o IndexedDB. Não há backup unificado.
 - Áudio e streams HLS sempre exigem rede; offline entrega apenas a interface.
 - Estatísticas, favoritos e configurações são **por navegador/dispositivo** —
   não sincronizam. Migre com exportar/importar.
-- Nome da música tocando não é exibido: streams ICY não expõem metadata ao
-  JavaScript, e a API Radio Browser não fornece "now playing".
+- Nome da música tocando não é exibido por padrão: streams ICY não expõem
+  metadata ao JavaScript, e a API Radio Browser não fornece "now playing".
+  O Modo Carro pode mostrar isso (ver seção abaixo), mas requer um Worker
+  à parte — não é algo que o app faça sozinho, sem configuração.
+
+## Modo Carro: capa e faixa tocando (opcional)
+
+Por padrão o Modo Carro mostra só nome da estação e tempo de escuta. Pra
+mostrar também "Artista — Faixa" e a capa do álbum, é preciso um pequeno
+proxy, porque o navegador não consegue ler o metadado ICY que o Shoutcast/
+Icecast intercala dentro do áudio bruto — isso só dá pra ler no servidor.
+
+1. Publique `cloudflare-worker/nowplaying.js` como um Worker no Cloudflare
+   (dashboard → Workers & Pages → Create application → Create Worker, cole o
+   arquivo, publique).
+2. Ajuste `ALLOWED_ORIGINS` no topo do arquivo para o(s) domínio(s) reais do
+   app antes de publicar.
+3. Copie a URL do Worker publicado e cole em `NOWPLAYING_WORKER_URL`, no topo
+   de `app.js`.
+
+Sem isso configurado (valor padrão: string vazia), o Modo Carro funciona
+normalmente, só sem capa/faixa — nada quebra. Quando a estação não manda
+metadado (rádio falada, por exemplo) ou não dá pra achar a capa, o app
+também cai de volta no comportamento padrão silenciosamente. A busca de capa
+usa a API pública da iTunes (sem chave, sem custo) como alternativa para
+estações que não mandam a própria arte junto do metadado.
 
 ## Versionamento
 

@@ -77,6 +77,8 @@
     const carPrevButton = $("carPrevButton");
     const carNextButton = $("carNextButton");
     const carPresetGrid = $("carPresetGrid");
+    const carArt = $("carArt");
+    const carTrackInfo = $("carTrackInfo");
 
     // ---------- Estado ----------
     const LS = {
@@ -95,6 +97,10 @@
         "https://nl1.api.radio-browser.info/json/stations/search",
         "https://all.api.radio-browser.info/json/stations/search"
     ];
+
+    // URL do Worker de "tocando agora" (cloudflare-worker/nowplaying.js).
+    // Deixe em branco para desativar a exibição de capa/faixa no Modo Carro.
+    const NOWPLAYING_WORKER_URL = "";
 
     let favorites = {};
     let categoryOrder = [];
@@ -116,6 +122,8 @@
 
     let carPresets = [];
     let carClockTimer = 0;
+    let carNowPlayingTimer = 0;
+    let carNowPlayingToken = 0;
 
     // ============================================================
     // Utilidades
@@ -1169,7 +1177,74 @@
         carPlayButton.textContent = isBusy ? "■" : "▶";
         carPlayButton.setAttribute("aria-label", isBusy ? "Parar" : "Tocar");
 
+        if (state === "playing" && currentStation) {
+            fetchCarNowPlaying(currentStation);
+        } else {
+            clearCarNowPlaying();
+        }
+
         refreshCarPresetActive();
+    }
+
+    function setCarArt(url) {
+        if (!carArt) return;
+        if (url) {
+            carArt.src = url;
+            carArt.hidden = false;
+        } else {
+            carArt.removeAttribute("src");
+            carArt.hidden = true;
+        }
+    }
+
+    function clearCarNowPlaying() {
+        carNowPlayingToken++;
+        if (carTrackInfo) {
+            carTrackInfo.hidden = true;
+            carTrackInfo.textContent = "";
+        }
+        setCarArt(null);
+    }
+
+    // Busca "tocando agora" (artista/faixa/capa) via o Worker do metadado ICY,
+    // com fallback pra busca de capa na iTunes. Opcional: some de volta ao
+    // comportamento atual se NOWPLAYING_WORKER_URL não estiver configurado ou
+    // a estação não enviar metadado.
+    async function fetchCarNowPlaying(station) {
+        if (!NOWPLAYING_WORKER_URL || !station || !station.url_resolved) return;
+        const token = ++carNowPlayingToken;
+
+        let data = null;
+        try {
+            const res = await fetch(NOWPLAYING_WORKER_URL + "?url=" + encodeURIComponent(station.url_resolved));
+            if (res.ok) data = await res.json();
+        } catch (_) {
+            // metadado é um extra — falha aqui nunca deve afetar o player
+        }
+        if (token !== carNowPlayingToken) return;
+
+        if (!data || !data.title) {
+            carTrackInfo.hidden = true;
+            carTrackInfo.textContent = "";
+            setCarArt(null);
+            return;
+        }
+
+        carTrackInfo.hidden = false;
+        carTrackInfo.textContent = data.artist ? `${data.artist} — ${data.title}` : data.title;
+
+        let art = data.art || null;
+        if (!art) {
+            try {
+                const term = encodeURIComponent([data.artist, data.title].filter(Boolean).join(" "));
+                const r2 = await fetch(`https://itunes.apple.com/search?term=${term}&media=music&limit=1`);
+                const j2 = await r2.json();
+                const hit = j2 && j2.results && j2.results[0];
+                if (hit && hit.artworkUrl100) art = hit.artworkUrl100.replace("100x100", "600x600");
+            } catch (_) {}
+        }
+        if (token !== carNowPlayingToken) return;
+        setCarArt(art);
     }
 
     function refreshCarPresetActive() {
@@ -1261,6 +1336,10 @@
         tickCarClock();
         clearInterval(carClockTimer);
         carClockTimer = setInterval(tickCarClock, 15000);
+        clearInterval(carNowPlayingTimer);
+        carNowPlayingTimer = setInterval(() => {
+            if (playerBar.dataset.state === "playing" && currentStation) fetchCarNowPlaying(currentStation);
+        }, 20000);
     }
 
     function exitCarMode() {
@@ -1268,6 +1347,9 @@
         document.body.style.overflow = "";
         clearInterval(carClockTimer);
         carClockTimer = 0;
+        clearInterval(carNowPlayingTimer);
+        carNowPlayingTimer = 0;
+        clearCarNowPlaying();
     }
 
     // ============================================================
@@ -1678,6 +1760,9 @@
         });
         carPrevButton.addEventListener("click", () => carStep(-1));
         carNextButton.addEventListener("click", () => carStep(1));
+        carArt.addEventListener("error", () => {
+            carArt.hidden = true;
+        });
         document.addEventListener("keydown", (e) => {
             if (e.key === "Escape" && carModeScreen && !carModeScreen.hidden) exitCarMode();
         });

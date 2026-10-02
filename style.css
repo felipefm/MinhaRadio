@@ -935,6 +935,16 @@ select.input { cursor: pointer; -webkit-appearance: auto; appearance: auto; }
 .car-mode__exit:active { transform: scale(0.94); }
 
 .car-mode__hero { padding: 0 var(--sp-5); text-align: center; flex-shrink: 0; }
+.car-mode__art {
+    width: 96px;
+    height: 96px;
+    object-fit: cover;
+    border-radius: var(--r);
+    margin: 0 auto var(--sp-2);
+    display: block;
+    box-shadow: var(--shadow-md);
+    background: var(--surface-3);
+}
 .car-mode__hero h2 {
     margin: 0 0 var(--sp-1);
     font-size: clamp(1.3rem, 6vw, 1.7rem);
@@ -946,6 +956,14 @@ select.input { cursor: pointer; -webkit-appearance: auto; appearance: auto; }
     -webkit-box-orient: vertical;
 }
 .car-mode__hero p { margin: 0; font-size: var(--fs-sm); font-weight: 600; color: var(--text-muted); min-height: 1.3em; }
+.car-mode__hero p.car-mode__track {
+    margin-top: var(--sp-1);
+    color: var(--accent);
+    overflow: hidden;
+    display: -webkit-box;
+    -webkit-line-clamp: 1;
+    -webkit-box-orient: vertical;
+}
 
 .car-mode__eq {
     display: flex;
