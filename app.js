@@ -103,6 +103,8 @@
 
     let currentStation = null;
     let currentHls = null;
+    let playToken = 0;
+    let streamSettling = false;
     let lastVolume = 1;
     let isMuted = false;
     let deferredPrompt = null;
@@ -146,6 +148,13 @@
         a.click();
         a.remove();
         setTimeout(() => URL.revokeObjectURL(url), 1000);
+    }
+
+    // Em página HTTPS, converte http:// -> https:// (evita bloqueio de conteúdo misto)
+    function preferHttps(url) {
+        return url && location.protocol === "https:" && url.startsWith("http://")
+            ? "https://" + url.slice(7)
+            : url;
     }
 
     function isValidHttpUrl(str) {
@@ -620,9 +629,10 @@
         if (station.favicon) {
             favEl = document.createElement("img");
             favEl.className = "station-favicon";
-            favEl.src = station.favicon;
             favEl.alt = "";
             favEl.loading = "lazy";
+            favEl.referrerPolicy = "no-referrer";
+            favEl.src = preferHttps(station.favicon);
             favEl.addEventListener("error", () => {
                 const ph = document.createElement("span");
                 ph.className = "station-favicon-ph";
@@ -992,6 +1002,20 @@
         });
     }
 
+    // Monta a lista de URLs a tentar, priorizando HTTPS numa página HTTPS
+    // (evita o bloqueio de conteúdo misto do navegador).
+    function streamCandidates(station) {
+        const out = [];
+        const add = (u) => {
+            if (u && typeof u === "string" && !out.includes(u)) out.push(u);
+        };
+        add(preferHttps(station.url_resolved));
+        add(preferHttps(station.url));
+        add(station.url_resolved);
+        add(station.url);
+        return out;
+    }
+
     function playStream(station) {
         if (!station || !station.url_resolved) {
             showToast("URL da estação indisponível.");
@@ -999,6 +1023,8 @@
         }
         stopStream(true);
         currentStation = station;
+        const token = ++playToken;
+        streamSettling = true;
         if (window.radioData) window.radioData.recordClick(station);
 
         nowPlaying.textContent = `Carregando: ${station.name}…`;
@@ -1006,10 +1032,11 @@
         setPlayerState("loading");
         updatePlayButtons(false);
 
-        const url = station.url_resolved;
+        const candidates = streamCandidates(station);
 
         const onPlaying = () => {
-            if (currentStation !== station) return;
+            if (token !== playToken || currentStation !== station) return;
+            streamSettling = false;
             nowPlaying.textContent = station.name;
             nowPlayingSub.textContent = stationDetails(station);
             setPlayerState("playing");
@@ -1022,29 +1049,56 @@
             setTimeout(updateTopRadios, 1200);
         };
 
-        if (url.includes(".m3u8")) {
-            if (window.Hls && Hls.isSupported()) {
-                currentHls = new Hls();
-                currentHls.loadSource(url);
-                currentHls.attachMedia(audioPlayer);
-                currentHls.on(Hls.Events.MANIFEST_PARSED, () => {
-                    audioPlayer.play().then(onPlaying).catch((err) => handlePlayError(station, err));
-                });
-                currentHls.on(Hls.Events.ERROR, (evt, data) => {
-                    if (data && data.fatal) handlePlayError(station, new Error(data.type || "HLS"));
-                });
-            } else if (audioPlayer.canPlayType("application/vnd.apple.mpegurl")) {
-                audioPlayer.src = url;
-                audioPlayer.play().then(onPlaying).catch((err) => handlePlayError(station, err));
+        const attempt = (i) => {
+            if (token !== playToken) return;
+            const url = candidates[i];
+
+            const fail = (err) => {
+                if (token !== playToken) return;
+                if (currentHls) {
+                    try {
+                        currentHls.destroy();
+                    } catch (_) {}
+                    currentHls = null;
+                }
+                if (i + 1 < candidates.length) {
+                    console.warn(
+                        `Rádio "${station.name}": ${url} falhou (${err && err.message}); tentando alternativa.`
+                    );
+                    attempt(i + 1);
+                } else {
+                    streamSettling = false;
+                    handlePlayError(station, err);
+                }
+            };
+
+            if (url.includes(".m3u8")) {
+                if (window.Hls && Hls.isSupported()) {
+                    currentHls = new Hls();
+                    currentHls.loadSource(url);
+                    currentHls.attachMedia(audioPlayer);
+                    currentHls.on(Hls.Events.MANIFEST_PARSED, () => {
+                        audioPlayer.play().then(onPlaying).catch(fail);
+                    });
+                    currentHls.on(Hls.Events.ERROR, (evt, data) => {
+                        if (data && data.fatal) fail(new Error(data.details || data.type || "HLS"));
+                    });
+                } else if (audioPlayer.canPlayType("application/vnd.apple.mpegurl")) {
+                    audioPlayer.src = url;
+                    audioPlayer.play().then(onPlaying).catch(fail);
+                } else {
+                    streamSettling = false;
+                    showToast("Este navegador não suporta esta rádio (HLS).", 4000);
+                    stopStream();
+                }
             } else {
-                showToast("Este navegador não suporta esta rádio (HLS).", 4000);
-                stopStream();
+                audioPlayer.src = url;
+                audioPlayer.load();
+                audioPlayer.play().then(onPlaying).catch(fail);
             }
-        } else {
-            audioPlayer.src = url;
-            audioPlayer.load();
-            audioPlayer.play().then(onPlaying).catch((err) => handlePlayError(station, err));
-        }
+        };
+
+        attempt(0);
     }
 
     function handlePlayError(station, error) {
@@ -1063,6 +1117,7 @@
     }
 
     function stopStream(silent) {
+        streamSettling = false;
         if (window.radioData) window.radioData.endListeningSession();
         try {
             audioPlayer.pause();
@@ -1233,6 +1288,7 @@
             stationuuid: station.stationuuid,
             name: station.name,
             url_resolved: station.url_resolved,
+            url: station.url || "",
             favicon: station.favicon || "",
             country: station.country || "",
             codec: station.codec || "",
@@ -1642,7 +1698,7 @@
         });
         audioPlayer.addEventListener("ended", () => stopStream());
         audioPlayer.addEventListener("error", () => {
-            if (currentStation && !currentHls) handlePlayError(currentStation, new Error("audio"));
+            if (currentStation && !currentHls && !streamSettling) handlePlayError(currentStation, new Error("audio"));
         });
         audioPlayer.addEventListener("volumechange", () => {
             try {
