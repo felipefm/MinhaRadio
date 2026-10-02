@@ -1205,6 +1205,16 @@
         }
     }
 
+    // Atualiza a capa nos dois lugares e esconde o equalizador animado
+    // enquanto ela estiver visível (ele só faz sentido como indicador de
+    // "tocando" quando não há capa pra mostrar).
+    function applyArt(url) {
+        setArtImage(carArt, url);
+        setArtImage(nowPlayingArt, url);
+        playerBar.classList.toggle("has-art", !!url);
+        carModeScreen.classList.toggle("has-art", !!url);
+    }
+
     // Letreiro: só anima quando o texto não cabe no espaço disponível.
     // `el` é o "visor" (overflow:hidden); por dentro ele ganha uma faixa
     // (.marquee__track) que é a parte realmente medida e animada.
@@ -1249,13 +1259,12 @@
 
     function clearNowPlaying() {
         nowPlayingToken++;
+        applyArt(null);
         if (carTrackInfo) {
             carTrackInfo.hidden = true;
             setMarqueeText(carTrackInfo, "");
         }
         if (currentStation) setMarqueeText(nowPlayingSub, stationDetails(currentStation) || "");
-        setArtImage(carArt, null);
-        setArtImage(nowPlayingArt, null);
     }
 
     // Busca "tocando agora" (artista/faixa/capa) via o Worker do metadado ICY,
@@ -1277,22 +1286,14 @@
         if (token !== nowPlayingToken) return;
 
         if (!data || !data.title) {
+            applyArt(null);
             if (carTrackInfo) {
                 carTrackInfo.hidden = true;
                 setMarqueeText(carTrackInfo, "");
             }
             if (currentStation === station) setMarqueeText(nowPlayingSub, stationDetails(station) || "");
-            setArtImage(carArt, null);
-            setArtImage(nowPlayingArt, null);
             return;
         }
-
-        const label = data.artist ? `${data.artist} — ${data.title}` : data.title;
-        if (carTrackInfo) {
-            carTrackInfo.hidden = false;
-            setMarqueeText(carTrackInfo, label);
-        }
-        if (currentStation === station) setMarqueeText(nowPlayingSub, label);
 
         let art = data.art || null;
         if (!art) {
@@ -1305,8 +1306,18 @@
             } catch (_) {}
         }
         if (token !== nowPlayingToken) return;
-        setArtImage(carArt, art);
-        setArtImage(nowPlayingArt, art);
+
+        // A capa (e o espaço que ela ocupa) precisa estar definida ANTES de
+        // medir o letreiro — senão a medição roda com um layout mais largo do
+        // que o real, e o texto nunca entra em scroll quando devia.
+        applyArt(art);
+
+        const label = data.artist ? `${data.artist} — ${data.title}` : data.title;
+        if (carTrackInfo) {
+            carTrackInfo.hidden = false;
+            setMarqueeText(carTrackInfo, label);
+        }
+        if (currentStation === station) setMarqueeText(nowPlayingSub, label);
     }
 
     function refreshCarPresetActive() {

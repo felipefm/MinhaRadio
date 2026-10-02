@@ -642,6 +642,7 @@ select.input { cursor: pointer; -webkit-appearance: auto; appearance: auto; }
     flex-shrink: 0;
 }
 .player[data-state="playing"] .player__eq { display: flex; }
+.player.has-art[data-state="playing"] .player__eq { display: none; }
 .player__eq span {
     width: 3px;
     background: var(--accent);
@@ -997,6 +998,7 @@ select.input { cursor: pointer; -webkit-appearance: auto; appearance: auto; }
     flex-shrink: 0;
 }
 .car-mode[data-state="playing"] .car-mode__eq { opacity: 1; }
+.car-mode.has-art[data-state="playing"] .car-mode__eq { opacity: 0; }
 .car-mode__eq span { width: 4px; background: var(--accent); border-radius: 2px; animation: eq 0.9s ease-in-out infinite; }
 .car-mode__eq span:nth-child(2) { animation-delay: -0.4s; }
 .car-mode__eq span:nth-child(3) { animation-delay: -0.15s; }
