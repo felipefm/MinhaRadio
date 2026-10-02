@@ -100,7 +100,7 @@
 
     // URL do Worker de "tocando agora" (cloudflare-worker/nowplaying.js).
     // Deixe em branco para desativar a exibição de capa/faixa no Modo Carro.
-    const NOWPLAYING_WORKER_URL = "";
+    const NOWPLAYING_WORKER_URL = "https://radio-nowplaying.felipefm-suporte.workers.dev/";
 
     let favorites = {};
     let categoryOrder = [];
