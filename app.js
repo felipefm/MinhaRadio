@@ -66,6 +66,18 @@
     const toastMessage = $("toastMessage");
     const modalRoot = $("modalRoot");
 
+    const carModeButton = $("carModeButton");
+    const carModeScreen = $("carModeScreen");
+    const carExitButton = $("carExitButton");
+    const carClock = $("carClock");
+    const carStatusLabel = $("carStatusLabel");
+    const carStationName = $("carStationName");
+    const carStationSub = $("carStationSub");
+    const carPlayButton = $("carPlayButton");
+    const carPrevButton = $("carPrevButton");
+    const carNextButton = $("carNextButton");
+    const carPresetGrid = $("carPresetGrid");
+
     // ---------- Estado ----------
     const LS = {
         fav: "radioFavorites",
@@ -99,6 +111,9 @@
     let dragData = null;
 
     let sleepState = { deadline: 0, tickId: 0, fadeId: 0, minutes: 0 };
+
+    let carPresets = [];
+    let carClockTimer = 0;
 
     // ============================================================
     // Utilidades
@@ -962,6 +977,7 @@
     // ============================================================
     function setPlayerState(state) {
         playerBar.dataset.state = state;
+        updateCarModeUI();
     }
 
     function updatePlayButtons(isPlaying) {
@@ -1074,6 +1090,129 @@
             nowPlayingSub.textContent = "";
             setPlayerState("idle");
         }
+    }
+
+    // ============================================================
+    // Modo Carro
+    // ============================================================
+    function updateCarModeUI() {
+        if (!carModeScreen || carModeScreen.hidden) return;
+        const state = playerBar.dataset.state;
+        carModeScreen.dataset.state = state;
+        const isBusy = state === "playing" || state === "loading";
+
+        if (currentStation) {
+            carStationName.textContent = currentStation.name || "Sem nome";
+            carStationSub.textContent = stationDetails(currentStation) || "";
+        } else {
+            carStationName.textContent = "Nenhuma rádio selecionada";
+            carStationSub.textContent = "Toque em um preset abaixo";
+        }
+
+        carStatusLabel.textContent = state === "playing" ? "Ao vivo" : state === "loading" ? "Carregando…" : "Parado";
+        carPlayButton.disabled = !currentStation;
+        carPlayButton.textContent = isBusy ? "■" : "▶";
+        carPlayButton.setAttribute("aria-label", isBusy ? "Parar" : "Tocar");
+
+        refreshCarPresetActive();
+    }
+
+    function refreshCarPresetActive() {
+        const uuid = currentStation ? currentStation.stationuuid : null;
+        carPresetGrid.querySelectorAll(".car-preset").forEach((el) => {
+            el.classList.toggle("is-active", !!uuid && el.dataset.stationuuid === uuid);
+        });
+    }
+
+    function buildCarPresetTile(station, index) {
+        const b = document.createElement("button");
+        b.type = "button";
+        b.className = "car-preset";
+        b.dataset.stationuuid = station.stationuuid;
+
+        const num = document.createElement("span");
+        num.className = "car-preset__num";
+        num.textContent = "#" + (index + 1);
+
+        const name = document.createElement("b");
+        name.textContent = station.name || "Sem nome";
+
+        const time = document.createElement("span");
+        time.textContent = station._timeLabel || "";
+
+        b.append(num, name, time);
+        b.addEventListener("click", () => playCarPreset(index));
+        return b;
+    }
+
+    function renderCarPresets() {
+        carPresetGrid.innerHTML = "";
+        if (!carPresets.length) {
+            emptyState(carPresetGrid, "Ouça algumas rádios para elas aparecerem aqui.");
+            return;
+        }
+        const frag = document.createDocumentFragment();
+        carPresets.forEach((st, i) => frag.appendChild(buildCarPresetTile(st, i)));
+        carPresetGrid.appendChild(frag);
+        refreshCarPresetActive();
+    }
+
+    async function loadCarPresets() {
+        if (!window.radioData) {
+            carPresets = [];
+            renderCarPresets();
+            return;
+        }
+        try {
+            const top = await window.radioData.getTopByTime(8);
+            carPresets = top.map((r) => ({
+                stationuuid: r.stationId,
+                name: r.name,
+                url_resolved: r.url,
+                favicon: "",
+                country: "",
+                codec: "",
+                bitrate: "",
+                _timeLabel: window.radioData.formatTime(r.totalTime || 0)
+            }));
+        } catch (_) {
+            carPresets = [];
+        }
+        renderCarPresets();
+    }
+
+    function playCarPreset(index) {
+        if (index < 0 || index >= carPresets.length) return;
+        playStream(carPresets[index]);
+    }
+
+    function carStep(delta) {
+        if (!carPresets.length) return;
+        const cur = currentStation ? carPresets.findIndex((p) => p.stationuuid === currentStation.stationuuid) : -1;
+        const next = cur > -1 ? (cur + delta + carPresets.length) % carPresets.length : 0;
+        playCarPreset(next);
+    }
+
+    function tickCarClock() {
+        const d = new Date();
+        carClock.textContent = String(d.getHours()).padStart(2, "0") + ":" + String(d.getMinutes()).padStart(2, "0");
+    }
+
+    function enterCarMode() {
+        carModeScreen.hidden = false;
+        document.body.style.overflow = "hidden";
+        updateCarModeUI();
+        loadCarPresets();
+        tickCarClock();
+        clearInterval(carClockTimer);
+        carClockTimer = setInterval(tickCarClock, 15000);
+    }
+
+    function exitCarMode() {
+        carModeScreen.hidden = true;
+        document.body.style.overflow = "";
+        clearInterval(carClockTimer);
+        carClockTimer = 0;
     }
 
     // ============================================================
@@ -1472,6 +1611,20 @@
                 .catch((err) => handlePlayError(currentStation, err));
         });
         stopButton.addEventListener("click", () => stopStream());
+
+        // Modo Carro
+        carModeButton.addEventListener("click", enterCarMode);
+        carExitButton.addEventListener("click", exitCarMode);
+        carPlayButton.addEventListener("click", () => {
+            const state = playerBar.dataset.state;
+            if (state === "playing" || state === "loading") stopStream();
+            else if (currentStation) playStream(currentStation);
+        });
+        carPrevButton.addEventListener("click", () => carStep(-1));
+        carNextButton.addEventListener("click", () => carStep(1));
+        document.addEventListener("keydown", (e) => {
+            if (e.key === "Escape" && carModeScreen && !carModeScreen.hidden) exitCarMode();
+        });
 
         playerExpandButton.addEventListener("click", () => {
             const nowHidden = playerPanel.classList.toggle("hidden-section");

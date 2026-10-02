@@ -1,6 +1,6 @@
-/* Service Worker — Rádio Player Online v3.0
+/* Service Worker — Rádio Player Online v3.1
    Caminhos relativos: funciona em qualquer subpasta / repositório. */
-const CACHE_NAME = 'radio-player-v3.0.0';
+const CACHE_NAME = 'radio-player-v3.1.0';
 
 const ASSETS = [
     './',

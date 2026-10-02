@@ -19,6 +19,7 @@
                 <span class="topbar__name">Rádio Player</span>
             </div>
             <div class="topbar__actions">
+                <button id="carModeButton" class="icon-btn" type="button" title="Modo Carro" aria-label="Abrir Modo Carro">🚗</button>
                 <button id="themeToggleButton" class="icon-btn" type="button" title="Alternar tema" aria-label="Alternar tema claro/escuro">🌙</button>
                 <button id="settingsButton" class="icon-btn" type="button" title="Configurações" aria-label="Abrir configurações">⚙️</button>
             </div>
@@ -215,6 +216,33 @@
         <audio id="audioPlayer" hidden></audio>
     </div>
 
+    <!-- MODO CARRO -->
+    <div id="carModeScreen" class="car-mode" hidden>
+        <div class="car-mode__top">
+            <span class="car-mode__clock" id="carClock">--:--</span>
+            <span class="car-mode__status"><span class="car-mode__dot" aria-hidden="true"></span><span id="carStatusLabel">Parado</span></span>
+            <button id="carExitButton" class="car-mode__exit" type="button" aria-label="Sair do Modo Carro">✕</button>
+        </div>
+
+        <div class="car-mode__hero">
+            <h2 id="carStationName">Nenhuma rádio selecionada</h2>
+            <p id="carStationSub">Toque em um preset abaixo</p>
+        </div>
+
+        <div class="car-mode__eq" aria-hidden="true"><span></span><span></span><span></span><span></span></div>
+
+        <div class="car-mode__transport">
+            <button id="carPrevButton" class="car-mode__tbtn" type="button" aria-label="Estação anterior">⏮</button>
+            <button id="carPlayButton" class="car-mode__tbtn car-mode__tbtn--play" type="button" disabled aria-label="Tocar">▶</button>
+            <button id="carNextButton" class="car-mode__tbtn" type="button" aria-label="Próxima estação">⏭</button>
+        </div>
+
+        <div class="car-mode__presets">
+            <div class="car-mode__presets-title">🏆 Mais ouvidas <b>· ranking automático</b></div>
+            <div id="carPresetGrid" class="car-mode__grid"></div>
+        </div>
+    </div>
+
     <!-- CONFIGURAÇÕES -->
     <div id="settingsSheet" class="sheet" hidden>
         <div class="sheet__backdrop" data-close-sheet></div>
@@ -242,13 +270,14 @@
                 <details class="setting setting--about">
                     <summary>Sobre o projeto</summary>
                     <div class="about-content">
-                        <h3>📻 Rádio Player Online <span class="about-version">v3.0</span></h3>
+                        <h3>📻 Rádio Player Online <span class="about-version">v3.1</span></h3>
                         <p>Um player de rádio web para descobrir, tocar e organizar estações de rádio de todo o mundo. Funciona offline como app instalável (PWA).</p>
                         <h4>Recursos</h4>
                         <ul>
                             <li>🔍 Busca com filtros por país, gênero e idioma</li>
                             <li>⭐ Favoritos com categorias gerenciáveis</li>
                             <li>🕘 Histórico de tocadas recentemente</li>
+                            <li>🚗 Modo Carro: tela cheia com botões grandes e presets das mais ouvidas</li>
                             <li>⏱️ Sleep timer com fade-out</li>
                             <li>🎵 Streams HLS e formatos tradicionais</li>
                             <li>🌙 Tema claro/escuro e cores personalizáveis</li>

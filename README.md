@@ -1,4 +1,4 @@
-# Rádio Player Online 📻 — v3.0
+# Rádio Player Online 📻 — v3.1
 
 No silêncio que por vezes nos cerca, a busca por uma melodia, uma voz ou uma
 notícia se faz presente. Este projeto nasce como um humilde portal para esse
@@ -8,9 +8,10 @@ sempre à mão.
 ## O que é
 
 App web de player de rádios online: busca (API Radio Browser), favoritos por
-categoria, estatísticas de uso e player com sleep timer. HTML/CSS/JS puro, sem
-build e sem framework. É um **PWA** — instalável e com o "casco" funcionando
-offline.
+categoria, estatísticas de uso, player com sleep timer e um Modo Carro (tela
+cheia, botões grandes, presets das rádios mais ouvidas) para usar com o
+celular preso no carro. HTML/CSS/JS puro, sem build e sem framework. É um
+**PWA** — instalável e com o "casco" funcionando offline.
 
 ## Como publicar
 
