@@ -1,4 +1,4 @@
-# Rádio Player Online 📻 — v3.3
+# Rádio Player Online 📻 — v3.4
 
 No silêncio que por vezes nos cerca, a busca por uma melodia, uma voz ou uma
 notícia se faz presente. Este projeto nasce como um humilde portal para esse
@@ -10,7 +10,9 @@ sempre à mão.
 App web de player de rádios online: busca (API Radio Browser), favoritos por
 categoria, estatísticas de uso, player com sleep timer e um Modo Carro (tela
 cheia, botões grandes, presets das rádios mais ouvidas) para usar com o
-celular preso no carro. HTML/CSS/JS puro, sem build e sem framework. É um
+celular preso no carro. A tela inicial fica com favoritos, recentes e mais
+ouvidas; busca e "adicionar manualmente" (uso eventual) ficam numa tela
+própria, aberta pelo 🔍 da barra superior. HTML/CSS/JS puro, sem build e sem framework. É um
 **PWA** — instalável e com o "casco" funcionando offline.
 
 ## Como publicar
@@ -26,7 +28,7 @@ que o Service Worker não registra em `file://`.
 |---|---|
 | `index.html` | Estrutura e marcação de todas as seções. |
 | `style.css` | Estilos. Design tokens (espaçamento, raios, cores, sombras) em `:root`; tema escuro e cores de destaque sobrescrevem tokens em `body.dark-theme` / `body.title-color-*`. |
-| `app.js` | Tudo o mais: player (HLS.js + `<audio>`), busca e filtros, favoritos e categorias, recentes, sleep timer, modais in-app, tema, PWA. |
+| `app.js` | Tudo o mais: player (HLS.js + `<audio>`), Media Session, busca e filtros, favoritos e categorias, recentes, Modo Carro, sleep timer, modais in-app, tema, PWA. |
 | `radioData.js` | Estatísticas de uso — classe `RadioAnalytics`, isolada, grava em IndexedDB. `window.radioData`. |
 | `wakeLock.js` | Screen Wake Lock. Expõe `window.RadioWakeLock`; o `app.js` chama `request()`/`release()` ao tocar/parar. |
 | `sw.js` | Service Worker: cacheia o app shell (rede primeiro, cache como fallback offline); nunca cacheia áudio nem a API. Bump em `CACHE_NAME` a cada release. |
@@ -69,6 +71,40 @@ Estatísticas) cobre só o IndexedDB. Não há backup unificado.
   O app pode mostrar isso (ver seção abaixo), mas requer um Worker à parte —
   não é algo que o app faça sozinho, sem configuração.
 
+## Plataforma-alvo: Android
+
+O app é feito e testado para o **Chrome no Android**. Alguns recursos dependem
+de APIs que outros navegadores não têm ou limitam — nesses casos o recurso
+simplesmente não aparece, sem quebrar o resto:
+
+| Recurso | Android (Chrome) | iPhone (Safari) |
+|---|---|---|
+| Modo Carro em tela cheia (esconde barra de status/navegação) | ✅ Fullscreen API | ❌ Safari só permite tela cheia em vídeo; as barras continuam visíveis |
+| Capa/faixa na notificação e tela de bloqueio | ✅ Media Session | ⚠️ parcial |
+| Capa/faixa no painel do carro (Bluetooth) | ✅ se o carro suportar (ver abaixo) | ⚠️ parcial |
+| Botões do volante (play/stop, próxima/anterior) | ✅ | ⚠️ parcial |
+| "Voltar" fecha a busca/Modo Carro em vez de sair do app | ✅ | n/a |
+
+## Bluetooth do carro (Media Session)
+
+O app publica o que está tocando pela Media Session API — o Android repassa
+isso para a notificação, para a tela de bloqueio e, via Bluetooth (AVRCP), para
+o painel do carro:
+
+- **Título/artista**: "Faixa" e "Artista" quando há metadado (ver seção
+  abaixo); senão, nome da estação e país/codec.
+- **Capa**: capa do álbum → logo da estação → ícone do app, nessa ordem.
+  Texto aparece em praticamente qualquer carro; **a capa só aparece se a
+  central do carro suportar capa via Bluetooth (AVRCP 1.6+)** — muitas mostram
+  só texto, e isso não tem como ser contornado pelo app.
+- **Botões do volante/central**: ▶ reconecta na última rádio, ⏸/■ param (rádio
+  ao vivo não tem pausa de verdade), ⏭/⏮ trocam entre os presets do Modo Carro
+  (as mais ouvidas por tempo), mesmo com o Modo Carro fechado.
+
+O Modo Carro pede tela cheia ao abrir e de novo a cada toque nele — o Android
+sai da tela cheia ao alternar para outro app (GPS, por exemplo), e o navegador
+só permite voltar a ela a partir de um toque.
+
 ## Capa e faixa tocando (opcional)
 
 Por padrão o player mostra só nome da estação, país/codec/bitrate (na barra
@@ -105,7 +141,6 @@ compartilhar e adaptar, com atribuição e para uso não comercial.
 
 ## Ideias para próximas versões
 
-- Media Session API (controles na tela de bloqueio / bluetooth)
 - Reconexão automática do stream em quedas de conexão
 - Agregador de podcasts
 - Sincronização opcional de estatísticas entre dispositivos

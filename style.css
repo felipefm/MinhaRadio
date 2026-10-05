@@ -889,6 +889,53 @@ select.input { cursor: pointer; -webkit-appearance: auto; appearance: auto; }
     .toast { bottom: calc(var(--player-h) + var(--sp-3) + env(safe-area-inset-bottom)); }
 }
 
+/* ---------- Tela de busca ---------- */
+/* Fica abaixo do player fixo (z-index 40) pra que o que está tocando continue
+   visível enquanto se busca. */
+.search-screen {
+    position: fixed;
+    inset: 0;
+    z-index: 35;
+    background: var(--bg);
+    display: flex;
+    flex-direction: column;
+    padding-top: env(safe-area-inset-top);
+    animation: fade 0.15s ease;
+}
+.search-screen__top {
+    display: flex;
+    align-items: center;
+    gap: var(--sp-2);
+    width: 100%;
+    max-width: var(--maxw);
+    margin: 0 auto;
+    padding: var(--sp-3) var(--sp-4);
+    border-bottom: 1px solid var(--border);
+    flex-shrink: 0;
+}
+.search-screen__title { margin: 0; font-size: var(--fs-lg); font-weight: 700; }
+.search-screen__body {
+    flex: 1 1 auto;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+    width: 100%;
+    max-width: var(--maxw);
+    margin: 0 auto;
+    padding: var(--sp-4) var(--sp-4) calc(var(--player-h) + var(--sp-6) + env(safe-area-inset-bottom));
+    display: flex;
+    flex-direction: column;
+    gap: var(--sp-2);
+}
+/* Aqui a lista tem a tela toda — sem o limite de altura da tela inicial. */
+.search-screen .station-list { max-height: none; overflow: visible; }
+.search-screen .card { margin-top: var(--sp-3); }
+
+@media (max-width: 560px) {
+    .search-screen__top { padding: var(--sp-3); }
+    .search-screen__body { padding-left: var(--sp-3); padding-right: var(--sp-3); }
+    .search-screen__title { font-size: var(--fs-md); }
+}
+
 /* ---------- Modo Carro ---------- */
 .car-mode {
     position: fixed;

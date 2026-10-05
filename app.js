@@ -13,6 +13,9 @@
     const settingsSheet = $("settingsSheet");
     const titleColorChips = $("titleColorChips");
 
+    const searchOpenButton = $("searchOpenButton");
+    const searchCloseButton = $("searchCloseButton");
+    const searchScreen = $("searchScreen");
     const searchInput = $("searchInput");
     const searchButton = $("searchButton");
     const toggleFiltersButton = $("toggleFiltersButton");
@@ -109,6 +112,9 @@
     const openCategories = new Set();
 
     let currentStation = null;
+    // Última rádio tocada — o "play" vindo do volante/notificação retoma ela
+    // mesmo depois de um stop (que zera currentStation).
+    let lastStation = null;
     let currentHls = null;
     let playToken = 0;
     let streamSettling = false;
@@ -996,6 +1002,7 @@
     // ============================================================
     function setPlayerState(state) {
         playerBar.dataset.state = state;
+        setMediaPlaybackState(state);
 
         if (state === "playing" && currentStation) {
             refreshNowPlaying(currentStation);
@@ -1045,6 +1052,8 @@
         }
         stopStream(true);
         currentStation = station;
+        lastStation = station;
+        setStationMediaMetadata(station);
         const token = ++playToken;
         streamSettling = true;
         if (window.radioData) window.radioData.recordClick(station);
@@ -1291,7 +1300,10 @@
                 carTrackInfo.hidden = true;
                 setMarqueeText(carTrackInfo, "");
             }
-            if (currentStation === station) setMarqueeText(nowPlayingSub, stationDetails(station) || "");
+            if (currentStation === station) {
+                setMarqueeText(nowPlayingSub, stationDetails(station) || "");
+                setStationMediaMetadata(station);
+            }
             return;
         }
 
@@ -1317,7 +1329,86 @@
             carTrackInfo.hidden = false;
             setMarqueeText(carTrackInfo, label);
         }
-        if (currentStation === station) setMarqueeText(nowPlayingSub, label);
+        if (currentStation === station) {
+            setMarqueeText(nowPlayingSub, label);
+            setMediaMetadata({
+                title: data.title,
+                artist: data.artist || station.name,
+                album: data.artist ? station.name : "",
+                art: art || station.favicon
+            });
+        }
+    }
+
+    // ============================================================
+    // Media Session — o que aparece na notificação, na tela de bloqueio e,
+    // via Bluetooth (AVRCP), no painel do carro. Também recebe os botões
+    // de mídia do volante/central: play, stop e próxima/anterior.
+    // Feito para o Chrome do Android; em outros navegadores o suporte varia
+    // e a ausência da API é simplesmente ignorada.
+    // ============================================================
+    const hasMediaSession = "mediaSession" in navigator && typeof window.MediaMetadata === "function";
+    const APP_ICON_URL = new URL("icons/icon-512x512.png", location.href).href;
+
+    function setMediaMetadata({ title, artist, album, art }) {
+        if (!hasMediaSession) return;
+        const artwork = [];
+        if (art) artwork.push({ src: preferHttps(art) });
+        artwork.push({ src: APP_ICON_URL, sizes: "512x512", type: "image/png" });
+        try {
+            navigator.mediaSession.metadata = new MediaMetadata({
+                title: title || "",
+                artist: artist || "",
+                album: album || "",
+                artwork
+            });
+        } catch (_) {}
+    }
+
+    function setStationMediaMetadata(station) {
+        if (!station) return;
+        setMediaMetadata({
+            title: station.name || "Rádio",
+            artist: stationDetails(station) || "Rádio ao vivo",
+            art: station.favicon
+        });
+    }
+
+    function setMediaPlaybackState(state) {
+        if (!hasMediaSession) return;
+        try {
+            navigator.mediaSession.playbackState =
+                state === "playing" || state === "loading" ? "playing" : currentStation ? "paused" : "none";
+        } catch (_) {}
+    }
+
+    // Próxima/anterior seguem os presets do Modo Carro (mais ouvidas por
+    // tempo), carregando-os se o Modo Carro ainda não foi aberto.
+    async function mediaStep(delta) {
+        if (!carPresets.length) await loadCarPresets();
+        carStep(delta);
+    }
+
+    function wireMediaSession() {
+        if (!hasMediaSession) return;
+        const handlers = {
+            // Rádio ao vivo: "pausar" é parar; "tocar" reconecta no ao vivo.
+            play: () => {
+                const st = currentStation || lastStation;
+                if (st) playStream(st);
+            },
+            pause: () => stopStream(),
+            stop: () => stopStream(),
+            nexttrack: () => mediaStep(1),
+            previoustrack: () => mediaStep(-1)
+        };
+        Object.keys(handlers).forEach((action) => {
+            try {
+                navigator.mediaSession.setActionHandler(action, handlers[action]);
+            } catch (_) {
+                // ação não suportada neste navegador
+            }
+        });
     }
 
     function refreshCarPresetActive() {
@@ -1401,9 +1492,26 @@
         carClock.textContent = String(d.getHours()).padStart(2, "0") + ":" + String(d.getMinutes()).padStart(2, "0");
     }
 
+    // Tela cheia de verdade (esconde as barras de status e de navegação do
+    // Android). Precisa de um toque do usuário — por isso é pedida ao abrir o
+    // Modo Carro e de novo a cada toque nele, caso o sistema tenha saído da
+    // tela cheia (ao alternar pro GPS, por exemplo). Não funciona no iPhone:
+    // o Safari não permite tela cheia fora de vídeos.
+    function requestCarFullscreen() {
+        const el = document.documentElement;
+        if (carModeScreen.hidden || document.fullscreenElement || !el.requestFullscreen) return;
+        el.requestFullscreen({ navigationUI: "hide" }).catch(() => {});
+    }
+
+    function leaveFullscreen() {
+        if (document.fullscreenElement && document.exitFullscreen) document.exitFullscreen().catch(() => {});
+    }
+
     function enterCarMode() {
         carModeScreen.hidden = false;
         document.body.style.overflow = "hidden";
+        requestCarFullscreen();
+        pushOverlayState("car");
         updateCarModeUI();
         loadCarPresets();
         tickCarClock();
@@ -1411,11 +1519,45 @@
         carClockTimer = setInterval(tickCarClock, 15000);
     }
 
-    function exitCarMode() {
+    function exitCarMode(fromHistory) {
+        if (carModeScreen.hidden) return;
         carModeScreen.hidden = true;
         document.body.style.overflow = "";
+        leaveFullscreen();
+        if (!fromHistory) popOverlayState("car");
         clearInterval(carClockTimer);
         carClockTimer = 0;
+    }
+
+    // ============================================================
+    // Tela de busca
+    // ============================================================
+    function openSearch() {
+        searchScreen.hidden = false;
+        document.body.style.overflow = "hidden";
+        pushOverlayState("search");
+        // Só abre o teclado se ainda não há resultados pra ver.
+        if (!searchResults.children.length) searchInput.focus();
+    }
+
+    function closeSearch(fromHistory) {
+        if (searchScreen.hidden) return;
+        searchScreen.hidden = true;
+        document.body.style.overflow = "";
+        searchInput.blur();
+        if (!fromHistory) popOverlayState("search");
+    }
+
+    // Telas sobrepostas (busca, Modo Carro) entram no histórico, pra que o
+    // "voltar" do Android feche a tela em vez de sair do app.
+    function pushOverlayState(name) {
+        try {
+            history.pushState({ overlay: name }, "");
+        } catch (_) {}
+    }
+
+    function popOverlayState(name) {
+        if (history.state && history.state.overlay === name) history.back();
     }
 
     // ============================================================
@@ -1684,6 +1826,12 @@
     // Eventos
     // ============================================================
     function wireEvents() {
+        searchOpenButton.addEventListener("click", openSearch);
+        searchCloseButton.addEventListener("click", () => closeSearch());
+        window.addEventListener("popstate", () => {
+            closeSearch(true);
+            exitCarMode(true);
+        });
         searchButton.addEventListener("click", searchStations);
         searchInput.addEventListener("keydown", (e) => {
             if (e.key === "Enter") searchStations();
@@ -1818,7 +1966,8 @@
 
         // Modo Carro
         carModeButton.addEventListener("click", enterCarMode);
-        carExitButton.addEventListener("click", exitCarMode);
+        carExitButton.addEventListener("click", () => exitCarMode());
+        carModeScreen.addEventListener("click", requestCarFullscreen);
         carPlayButton.addEventListener("click", () => {
             const state = playerBar.dataset.state;
             if (state === "playing" || state === "loading") stopStream();
@@ -1830,7 +1979,9 @@
             carArt.hidden = true;
         });
         document.addEventListener("keydown", (e) => {
-            if (e.key === "Escape" && carModeScreen && !carModeScreen.hidden) exitCarMode();
+            if (e.key !== "Escape") return;
+            if (carModeScreen && !carModeScreen.hidden) exitCarMode();
+            else if (!searchScreen.hidden && settingsSheet.hidden) closeSearch();
         });
 
         playerExpandButton.addEventListener("click", () => {
@@ -1994,6 +2145,7 @@
         } catch (_) {}
 
         wireEvents();
+        wireMediaSession();
         renderFavorites();
         renderRecents();
         updateVolumeUI();
