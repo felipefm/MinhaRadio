@@ -1,6 +1,6 @@
 /* Service Worker — Rádio Player Online v3.4
    Caminhos relativos: funciona em qualquer subpasta / repositório. */
-const CACHE_NAME = 'radio-player-v3.4.0';
+const CACHE_NAME = 'radio-player-v3.4.1';
 
 const ASSETS = [
     './',
@@ -53,8 +53,11 @@ self.addEventListener('fetch', (event) => {
 
     // App shell: rede primeiro (sempre pega a versão mais nova quando online);
     // o cache só entra como fallback para continuar funcionando offline.
+    // `no-cache` força revalidar com o servidor: o host manda os arquivos com
+    // max-age de horas, e sem isso o navegador podia entregar um app.js velho
+    // junto de um index.html novo (botão novo na tela, mas sem o código dele).
     event.respondWith(
-        fetch(req)
+        fetch(req, { cache: 'no-cache' })
             .then((res) => {
                 if (res && res.ok && res.type === 'basic') {
                     const copy = res.clone();
