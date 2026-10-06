@@ -128,12 +128,6 @@ também cai de volta no comportamento padrão silenciosamente. A busca de capa
 usa a API pública da iTunes (sem chave, sem custo) como alternativa para
 estações que não mandam a própria arte junto do metadado.
 
-## Versionamento
-
-Cada versão é uma **cópia completa** da pasta, nomeada por versão
-(`MinhaRadio2.03.02` → `MinhaRadio3.0`). Não há git neste diretório; para uma
-nova versão, copie a pasta atual e trabalhe na cópia.
-
 ## Licença
 
 [CC BY-NC 4.0](https://creativecommons.org/licenses/by-nc/4.0/) — livre para
