@@ -84,6 +84,26 @@
     const carArt = $("carArt");
     const carTrackInfo = $("carTrackInfo");
 
+    const libraryOpenButton = $("libraryOpenButton");
+    const libraryScreen = $("libraryScreen");
+    const libraryBackButton = $("libraryBackButton");
+    const libraryTitle = $("libraryTitle");
+    const libraryBody = libraryScreen.querySelector(".search-screen__body");
+    const libraryHome = $("libraryHome");
+    const librarySearchInput = $("librarySearchInput");
+    const librarySearchButton = $("librarySearchButton");
+    const libraryShuffleAllButton = $("libraryShuffleAllButton");
+    const libraryTabs = $("libraryTabs");
+    const libraryActions = $("libraryActions");
+    const libraryList = $("libraryList");
+    const libraryMoreButton = $("libraryMoreButton");
+    const jellyfinSetting = $("jellyfinSetting");
+    const queueRow = $("queueRow");
+    const queuePrevButton = $("queuePrevButton");
+    const queueStopButton = $("queueStopButton");
+    const queueStatus = $("queueStatus");
+    const trackProgress = $("trackProgress");
+
     // ---------- Estado ----------
     const LS = {
         fav: "radioFavorites",
@@ -132,6 +152,14 @@
     let nowPlayingPollTimer = 0;
     let nowPlayingToken = 0;
 
+    // Minha biblioteca (Jellyfin). Uma faixa toca pelo mesmo caminho de uma
+    // rádio: vira um objeto "estação" com kind: "track" (ver trackToStation).
+    let queue = { items: [], index: -1 };
+    let libStack = [];
+    let libToken = 0;
+    const libHomeCache = {};
+    let positionStateSet = false;
+
     // ============================================================
     // Utilidades
     // ============================================================
@@ -170,6 +198,16 @@
         return url && location.protocol === "https:" && url.startsWith("http://")
             ? "https://" + url.slice(7)
             : url;
+    }
+
+    function isTrack(st) {
+        return !!st && st.kind === "track";
+    }
+
+    // Segunda linha do player/Modo Carro: detalhes da rádio, ou artista — álbum.
+    function playerSubtitle(st) {
+        if (!st) return "";
+        return isTrack(st) ? [st.artist, st.album].filter(Boolean).join(" — ") : stationDetails(st);
     }
 
     function isValidHttpUrl(str) {
@@ -1004,7 +1042,15 @@
         playerBar.dataset.state = state;
         setMediaPlaybackState(state);
 
-        if (state === "playing" && currentStation) {
+        if (isTrack(currentStation)) {
+            // Faixa da biblioteca: capa e nomes já vêm do Jellyfin, sem
+            // consultar o Worker de "tocando agora".
+            clearInterval(nowPlayingPollTimer);
+            nowPlayingPollTimer = 0;
+            nowPlayingToken++;
+            applyArt(currentStation.favicon || null);
+            if (carTrackInfo) carTrackInfo.hidden = true;
+        } else if (state === "playing" && currentStation) {
             refreshNowPlaying(currentStation);
             clearInterval(nowPlayingPollTimer);
             nowPlayingPollTimer = setInterval(() => {
@@ -1019,13 +1065,33 @@
         updateCarModeUI();
     }
 
+    // Rádio: ▶ e ■. Faixa da biblioteca: ▶/❚❚ (pausa de verdade) e ⏭; o
+    // "parar" e o "anterior" ficam no painel expandido (queueRow).
     function updatePlayButtons(isPlaying) {
+        const track = isTrack(currentStation);
+        playerBar.classList.toggle("is-track", track);
+        queueRow.hidden = !track;
+        if (track) {
+            const playing = !audioPlayer.paused;
+            playButton.disabled = false;
+            playButton.textContent = playing ? "❚❚" : "▶";
+            playButton.setAttribute("aria-label", playing ? "Pausar" : "Tocar");
+            stopButton.disabled = queue.index >= queue.items.length - 1;
+            stopButton.textContent = "⏭";
+            stopButton.setAttribute("aria-label", "Próxima faixa");
+            queueStatus.textContent = queue.items.length ? `Faixa ${queue.index + 1} de ${queue.items.length}` : "";
+            return;
+        }
         playButton.disabled = !currentStation || isPlaying;
+        playButton.textContent = "▶";
+        playButton.setAttribute("aria-label", "Tocar");
         stopButton.disabled = !currentStation;
+        stopButton.textContent = "■";
+        stopButton.setAttribute("aria-label", "Parar");
     }
 
     function markPlayingItems() {
-        const uuid = currentStation && playerBar.dataset.state === "playing" ? currentStation.stationuuid : null;
+        const uuid = currentStation && playerBar.dataset.state !== "idle" ? currentStation.stationuuid : null;
         document.querySelectorAll(".station-item").forEach((item) => {
             item.classList.toggle("is-playing", !!uuid && item.dataset.stationuuid === uuid);
         });
@@ -1053,13 +1119,17 @@
         stopStream(true);
         currentStation = station;
         lastStation = station;
-        setStationMediaMetadata(station);
+        // Faixas da biblioteca ficam fora das estatísticas, recentes e
+        // presets — esses são das rádios.
+        const track = isTrack(station);
+        if (track) setTrackMediaMetadata(station);
+        else setStationMediaMetadata(station);
         const token = ++playToken;
         streamSettling = true;
-        if (window.radioData) window.radioData.recordClick(station);
+        if (!track && window.radioData) window.radioData.recordClick(station);
 
         nowPlaying.textContent = `Carregando: ${station.name}…`;
-        setMarqueeText(nowPlayingSub, stationDetails(station));
+        setMarqueeText(nowPlayingSub, playerSubtitle(station));
         setPlayerState("loading");
         updatePlayButtons(false);
 
@@ -1069,14 +1139,15 @@
             if (token !== playToken || currentStation !== station) return;
             streamSettling = false;
             nowPlaying.textContent = station.name;
-            setMarqueeText(nowPlayingSub, stationDetails(station));
+            setMarqueeText(nowPlayingSub, playerSubtitle(station));
             setPlayerState("playing");
             updatePlayButtons(true);
             document.title = `▶ ${station.name} · Rádio Player`;
-            if (window.radioData) window.radioData.startListeningSession(station);
             if (window.RadioWakeLock) window.RadioWakeLock.request();
-            recordRecent(station);
             markPlayingItems();
+            if (track) return;
+            if (window.radioData) window.radioData.startListeningSession(station);
+            recordRecent(station);
             setTimeout(updateTopRadios, 1200);
         };
 
@@ -1137,6 +1208,8 @@
         let msg = `Não foi possível tocar "${station.name}".`;
         if (error && error.name === "NotAllowedError") {
             msg = "Toque no ▶ para iniciar o áudio.";
+        } else if (isTrack(station)) {
+            msg += " Confira se o Tailscale está ligado.";
         } else if (station.url_resolved && station.url_resolved.startsWith("http:") && location.protocol === "https:") {
             msg += " A rádio usa HTTP e pode estar sendo bloqueada pelo navegador.";
         } else {
@@ -1167,6 +1240,7 @@
 
         currentStation = null;
         updatePlayButtons(false);
+        updateTrackProgress();
         markPlayingItems();
         document.title = "Rádio Player Online";
 
@@ -1187,18 +1261,27 @@
         carModeScreen.dataset.state = state;
         const isBusy = state === "playing" || state === "loading";
 
+        const track = isTrack(currentStation);
+        carModeScreen.classList.toggle("is-track", track);
+
         if (currentStation) {
             carStationName.textContent = currentStation.name || "Sem nome";
-            carStationSub.textContent = stationDetails(currentStation) || "";
+            carStationSub.textContent = playerSubtitle(currentStation) || "";
         } else {
             carStationName.textContent = "Nenhuma rádio selecionada";
             carStationSub.textContent = "Toque em um preset abaixo";
         }
 
-        carStatusLabel.textContent = state === "playing" ? "Ao vivo" : state === "loading" ? "Carregando…" : "Parado";
+        const live = track ? "Biblioteca" : "Ao vivo";
+        carStatusLabel.textContent =
+            state === "playing" ? live : state === "loading" ? "Carregando…" : state === "paused" ? "Pausado" : "Parado";
         carPlayButton.disabled = !currentStation;
-        carPlayButton.textContent = isBusy ? "■" : "▶";
-        carPlayButton.setAttribute("aria-label", isBusy ? "Parar" : "Tocar");
+        // Faixa: o botão grande pausa/retoma; rádio: para/reconecta.
+        const glyph = isBusy ? (track ? "❚❚" : "■") : "▶";
+        carPlayButton.textContent = glyph;
+        carPlayButton.setAttribute("aria-label", isBusy ? (track ? "Pausar" : "Parar") : "Tocar");
+        carPrevButton.setAttribute("aria-label", track ? "Faixa anterior" : "Estação anterior");
+        carNextButton.setAttribute("aria-label", track ? "Próxima faixa" : "Próxima estação");
 
         refreshCarPresetActive();
     }
@@ -1273,7 +1356,7 @@
             carTrackInfo.hidden = true;
             setMarqueeText(carTrackInfo, "");
         }
-        if (currentStation) setMarqueeText(nowPlayingSub, stationDetails(currentStation) || "");
+        if (currentStation) setMarqueeText(nowPlayingSub, playerSubtitle(currentStation) || "");
     }
 
     // Busca "tocando agora" (artista/faixa/capa) via o Worker do metadado ICY,
@@ -1374,6 +1457,34 @@
         });
     }
 
+    function setTrackMediaMetadata(track) {
+        setMediaMetadata({ title: track.name, artist: track.artist, album: track.album, art: track.favicon });
+    }
+
+    // Barra de progresso fina no player + posição na notificação (que vira
+    // uma barra arrastável no Android). Só pra faixas; rádio ao vivo não tem.
+    function updateTrackProgress() {
+        const track = isTrack(currentStation);
+        const dur = !track
+            ? 0
+            : isFinite(audioPlayer.duration) && audioPlayer.duration > 0
+              ? audioPlayer.duration
+              : currentStation.duration || 0;
+        const pos = Math.min(audioPlayer.currentTime || 0, dur);
+        trackProgress.style.width = dur ? (pos / dur) * 100 + "%" : "0";
+
+        if (!hasMediaSession || !navigator.mediaSession.setPositionState) return;
+        try {
+            if (dur) {
+                navigator.mediaSession.setPositionState({ duration: dur, position: pos, playbackRate: 1 });
+                positionStateSet = true;
+            } else if (positionStateSet) {
+                navigator.mediaSession.setPositionState();
+                positionStateSet = false;
+            }
+        } catch (_) {}
+    }
+
     function setMediaPlaybackState(state) {
         if (!hasMediaSession) return;
         try {
@@ -1393,14 +1504,24 @@
         if (!hasMediaSession) return;
         const handlers = {
             // Rádio ao vivo: "pausar" é parar; "tocar" reconecta no ao vivo.
+            // Faixa da biblioteca: pausa e retoma de onde parou.
             play: () => {
+                if (isTrack(currentStation)) {
+                    audioPlayer.play().catch((err) => handlePlayError(currentStation, err));
+                    return;
+                }
                 const st = currentStation || lastStation;
                 if (st) playStream(st);
             },
-            pause: () => stopStream(),
+            pause: () => (isTrack(currentStation) ? audioPlayer.pause() : stopStream()),
             stop: () => stopStream(),
-            nexttrack: () => mediaStep(1),
-            previoustrack: () => mediaStep(-1)
+            nexttrack: () => (isTrack(currentStation) ? queueStep(1) : mediaStep(1)),
+            previoustrack: () => (isTrack(currentStation) ? queuePrev() : mediaStep(-1)),
+            seekto: (d) => {
+                if (!isTrack(currentStation) || !d || d.seekTime == null) return;
+                audioPlayer.currentTime = d.seekTime;
+                updateTrackProgress();
+            }
         };
         Object.keys(handlers).forEach((action) => {
             try {
@@ -1558,6 +1679,586 @@
 
     function popOverlayState(name) {
         if (history.state && history.state.overlay === name) history.back();
+    }
+
+    // ============================================================
+    // Minha biblioteca (Jellyfin) — fila de reprodução
+    // ============================================================
+    function trackToStation(item) {
+        const J = window.Jellyfin;
+        return {
+            kind: "track",
+            stationuuid: "jf-" + item.Id,
+            name: item.Name || "Sem título",
+            artist: item.AlbumArtist || (item.Artists || []).join(", "),
+            album: item.Album || "",
+            url_resolved: J.streamUrl(item),
+            favicon: J.imageUrl(item, 600),
+            duration: item.RunTimeTicks ? item.RunTimeTicks / 1e7 : 0
+        };
+    }
+
+    function shuffled(list) {
+        const a = list.slice();
+        for (let i = a.length - 1; i > 0; i--) {
+            const j = Math.floor(Math.random() * (i + 1));
+            [a[i], a[j]] = [a[j], a[i]];
+        }
+        return a;
+    }
+
+    async function playQueue(items, start = 0, { shuffle = false } = {}) {
+        const list = (items || []).filter((i) => i && i.Id && (i.Type === "Audio" || i.MediaType === "Audio"));
+        if (!list.length) {
+            showToast("Nada para tocar aqui.");
+            return;
+        }
+        queue = { items: shuffle ? shuffled(list) : list, index: -1 };
+        // Escolhe o endereço (casa ou Tailscale) antes de montar a URL do áudio.
+        try {
+            await window.Jellyfin.ensureServer();
+        } catch (_) {}
+        playQueueIndex(shuffle ? 0 : Math.max(0, Math.min(start, queue.items.length - 1)));
+    }
+
+    function playQueueIndex(i) {
+        if (i < 0 || i >= queue.items.length) return;
+        queue.index = i;
+        playStream(trackToStation(queue.items[i]));
+    }
+
+    function queueStep(delta) {
+        if (!queue.items.length) return;
+        const next = queue.index + delta;
+        if (next >= queue.items.length) {
+            showToast("Fim da fila.");
+            return;
+        }
+        playQueueIndex(Math.max(0, next));
+    }
+
+    // Como num player comum: no meio da música, "anterior" volta ao começo dela.
+    function queuePrev() {
+        if (audioPlayer.currentTime > 3 || queue.index <= 0) {
+            audioPlayer.currentTime = 0;
+            updateTrackProgress();
+            return;
+        }
+        playQueueIndex(queue.index - 1);
+    }
+
+    function onTrackEnded() {
+        if (queue.index < queue.items.length - 1) {
+            playQueueIndex(queue.index + 1);
+        } else {
+            stopStream();
+            showToast("Fim da fila. 🎵");
+        }
+    }
+
+    function toggleTrackPause() {
+        if (audioPlayer.paused) audioPlayer.play().catch((err) => handlePlayError(currentStation, err));
+        else audioPlayer.pause();
+    }
+
+    // ============================================================
+    // Minha biblioteca — tela (navegação em pilha, como pastas)
+    // Cada nível entra no histórico, então o "voltar" do Android sobe um
+    // nível; no topo, fecha a tela.
+    // ============================================================
+    const LIB_TABS = {
+        playlists: { label: "Playlists", load: (start) => window.Jellyfin.playlists({ start }) },
+        albums: { label: "Álbuns", load: (start) => window.Jellyfin.albums({ start }) },
+        artists: { label: "Artistas", load: (start) => window.Jellyfin.artists({ start }) }
+    };
+
+    function openLibrary() {
+        if (!window.Jellyfin || !window.Jellyfin.isConfigured()) {
+            openSheet(settingsSheet);
+            return;
+        }
+        libraryScreen.hidden = false;
+        document.body.style.overflow = "hidden";
+        libStack = [{ type: "home", tab: "playlists" }];
+        pushLibraryState();
+        renderLibraryView();
+    }
+
+    function closeLibrary(fromHistory) {
+        if (libraryScreen.hidden) return;
+        libraryScreen.hidden = true;
+        document.body.style.overflow = "";
+        librarySearchInput.blur();
+        libToken++;
+        if (!fromHistory) {
+            const depth = history.state && history.state.overlay === "library" ? history.state.depth : 0;
+            if (depth) history.go(-depth);
+        }
+        libStack = [];
+    }
+
+    function pushLibraryState() {
+        try {
+            history.pushState({ overlay: "library", depth: libStack.length }, "");
+        } catch (_) {}
+    }
+
+    function libraryPush(view) {
+        const cur = libStack[libStack.length - 1];
+        if (cur) cur.scroll = libraryBody.scrollTop;
+        libStack.push(view);
+        pushLibraryState();
+        renderLibraryView();
+    }
+
+    // Chamado pelo popstate: volta pro nível guardado no histórico.
+    function libraryGoTo(depth) {
+        libStack = libStack.slice(0, Math.max(1, depth));
+        renderLibraryView();
+    }
+
+    function loadLibraryView(view, start = 0) {
+        const J = window.Jellyfin;
+        switch (view.type) {
+            case "home":
+                return LIB_TABS[view.tab].load(start);
+            case "album":
+                return J.albumTracks(view.item.Id);
+            case "playlist":
+                return J.playlistTracks(view.item.Id);
+            case "artist":
+                return J.artistAlbums(view.item.Id);
+            case "search":
+                return J.search(view.term);
+        }
+        return Promise.resolve(null);
+    }
+
+    function libraryError(err) {
+        emptyState(libraryList, (err && err.message) || "Erro ao carregar.");
+        if (err && err.kind === "auth") {
+            showToast(err.message, 4500);
+        }
+    }
+
+    async function renderLibraryView() {
+        const view = libStack[libStack.length - 1];
+        if (!view) return;
+        const token = ++libToken;
+        const isHome = view.type === "home";
+
+        libraryHome.hidden = !isHome;
+        libraryTitle.textContent = isHome ? "Minha biblioteca" : view.title;
+        libraryActions.hidden = true;
+        libraryActions.innerHTML = "";
+        libraryMoreButton.hidden = true;
+        if (isHome) {
+            libraryTabs.querySelectorAll(".tab").forEach((t) => t.classList.toggle("is-active", t.dataset.tab === view.tab));
+        }
+
+        // Dados ficam guardados: voltar um nível não busca tudo de novo.
+        let data = isHome ? libHomeCache[view.tab] : view.data;
+        if (!data) {
+            emptyState(libraryList, "Carregando…");
+            try {
+                const res = await loadLibraryView(view);
+                data = { items: (res && res.Items) || [], total: (res && res.TotalRecordCount) || 0 };
+            } catch (err) {
+                if (token === libToken) libraryError(err);
+                return;
+            }
+            if (isHome) libHomeCache[view.tab] = data;
+            else view.data = data;
+        }
+        if (token !== libToken) return;
+
+        drawLibraryView(view, data);
+        libraryBody.scrollTop = view.scroll || 0;
+    }
+
+    async function loadMoreLibrary() {
+        const view = libStack[libStack.length - 1];
+        if (!view || view.type !== "home") return;
+        const data = libHomeCache[view.tab];
+        if (!data) return;
+        libraryMoreButton.disabled = true;
+        try {
+            const res = await loadLibraryView(view, data.items.length);
+            data.items = data.items.concat((res && res.Items) || []);
+            data.total = (res && res.TotalRecordCount) || data.total;
+            const keep = libraryBody.scrollTop;
+            drawLibraryView(view, data);
+            libraryBody.scrollTop = keep;
+        } catch (err) {
+            showToast(err.message || "Erro ao carregar.", 4000);
+        } finally {
+            libraryMoreButton.disabled = false;
+        }
+    }
+
+    function libraryButton(label, onClick, variant = "secondary") {
+        const b = document.createElement("button");
+        b.type = "button";
+        b.className = "btn btn--sm btn--" + variant;
+        b.textContent = label;
+        b.addEventListener("click", onClick);
+        return b;
+    }
+
+    function formatDuration(ticks) {
+        if (!ticks) return "";
+        const s = Math.round(ticks / 1e7);
+        return Math.floor(s / 60) + ":" + String(s % 60).padStart(2, "0");
+    }
+
+    // Linha de lista no mesmo visual das rádios (.station-item), pra que o
+    // destaque de "tocando agora" (markPlayingItems) funcione igual.
+    function buildLibraryRow({ uuid, title, subtitle, art, placeholder = "🎵", onClick, action }) {
+        const item = document.createElement("div");
+        item.className = "station-item";
+        if (uuid) item.dataset.stationuuid = uuid;
+
+        const main = document.createElement("button");
+        main.type = "button";
+        main.className = "station-main";
+
+        const ph = () => {
+            const s = document.createElement("span");
+            s.className = "station-favicon-ph" + (/^\d+$/.test(placeholder) ? " is-number" : "");
+            s.textContent = placeholder;
+            return s;
+        };
+        let artEl;
+        if (art) {
+            artEl = document.createElement("img");
+            artEl.className = "station-favicon";
+            artEl.alt = "";
+            artEl.loading = "lazy";
+            artEl.src = art;
+            artEl.addEventListener("error", () => artEl.replaceWith(ph()));
+        } else {
+            artEl = ph();
+        }
+
+        const text = document.createElement("div");
+        text.className = "station-text";
+        const nm = document.createElement("span");
+        nm.className = "station-name";
+        nm.textContent = title || "Sem título";
+        const dt = document.createElement("span");
+        dt.className = "station-details";
+        dt.textContent = subtitle || "";
+        text.append(nm, dt);
+
+        main.append(artEl, text);
+        main.addEventListener("click", onClick);
+        item.appendChild(main);
+
+        if (action) {
+            const actions = document.createElement("div");
+            actions.className = "station-actions";
+            actions.appendChild(iconButton(action.glyph, action.title, "", action.onClick));
+            item.appendChild(actions);
+        }
+        return item;
+    }
+
+    function openLibraryItem(item) {
+        const kind = { MusicAlbum: "album", Playlist: "playlist", MusicArtist: "artist" }[item.Type];
+        if (kind) libraryPush({ type: kind, item, title: item.Name || "Sem título" });
+    }
+
+    // Toca um álbum/playlist direto da lista, sem abrir.
+    async function quickPlay(item) {
+        try {
+            const res =
+                item.Type === "Playlist"
+                    ? await window.Jellyfin.playlistTracks(item.Id)
+                    : await window.Jellyfin.albumTracks(item.Id);
+            playQueue((res && res.Items) || []);
+        } catch (err) {
+            showToast(err.message || "Erro ao carregar.", 4000);
+        }
+    }
+
+    async function playFromServer(loader, label) {
+        showToast(label);
+        try {
+            const res = await loader();
+            playQueue(Array.isArray(res) ? res : (res && res.Items) || []);
+        } catch (err) {
+            showToast(err.message || "Erro ao carregar.", 4000);
+        }
+    }
+
+    function itemSubtitle(item) {
+        switch (item.Type) {
+            case "MusicAlbum":
+                return [item.AlbumArtist, item.ProductionYear].filter(Boolean).join(" · ") || "Álbum";
+            case "Playlist":
+                return "Playlist";
+            case "MusicArtist":
+                return "Artista";
+            case "Audio":
+                return [item.AlbumArtist || (item.Artists || []).join(", "), formatDuration(item.RunTimeTicks)]
+                    .filter(Boolean)
+                    .join(" · ");
+        }
+        return "";
+    }
+
+    function drawLibraryView(view, data) {
+        const J = window.Jellyfin;
+        const items = data.items;
+        const tracks = items.filter((i) => i.Type === "Audio");
+
+        // Ações do topo nas telas de detalhe.
+        if (view.type === "album" || view.type === "playlist") {
+            libraryActions.append(
+                libraryButton("▶ Tocar", () => playQueue(tracks), "primary"),
+                libraryButton("🔀 Aleatório", () => playQueue(tracks, 0, { shuffle: true })),
+                libraryButton("🎲 Mix parecido", () =>
+                    playFromServer(() => J.instantMix(view.item.Id), "Montando um mix…")
+                )
+            );
+            libraryActions.hidden = false;
+        } else if (view.type === "artist") {
+            libraryActions.append(
+                libraryButton("🎲 Mix do artista", () =>
+                    playFromServer(() => J.instantMix(view.item.Id), "Montando um mix…"),
+                    "primary"
+                )
+            );
+            libraryActions.hidden = false;
+        }
+
+        if (!items.length) {
+            const msg =
+                view.type === "search"
+                    ? "Nada encontrado para essa busca."
+                    : view.type === "home"
+                      ? `Nenhum item em ${LIB_TABS[view.tab].label.toLowerCase()}.`
+                      : "Vazio.";
+            emptyState(libraryList, msg);
+            return;
+        }
+
+        libraryList.innerHTML = "";
+        const frag = document.createDocumentFragment();
+        items.forEach((item) => {
+            if (item.Type === "Audio") {
+                const idx = tracks.indexOf(item);
+                const num = view.type === "album" && item.IndexNumber ? String(item.IndexNumber) : "🎵";
+                frag.appendChild(
+                    buildLibraryRow({
+                        uuid: "jf-" + item.Id,
+                        title: item.Name,
+                        subtitle: itemSubtitle(item),
+                        art: view.type === "album" ? "" : J.imageUrl(item, 96),
+                        placeholder: num,
+                        onClick: () => playQueue(tracks, idx)
+                    })
+                );
+                return;
+            }
+            const playable = item.Type === "MusicAlbum" || item.Type === "Playlist";
+            frag.appendChild(
+                buildLibraryRow({
+                    title: item.Name,
+                    subtitle: itemSubtitle(item),
+                    art: J.imageUrl(item, 96),
+                    placeholder: item.Type === "MusicArtist" ? "🎤" : item.Type === "Playlist" ? "📃" : "💿",
+                    onClick: () => openLibraryItem(item),
+                    action: playable ? { glyph: "▶", title: "Tocar", onClick: () => quickPlay(item) } : null
+                })
+            );
+        });
+        libraryList.appendChild(frag);
+        libraryMoreButton.hidden = !(view.type === "home" && items.length < data.total);
+        markPlayingItems();
+    }
+
+    function searchLibrary() {
+        const term = librarySearchInput.value.trim();
+        if (!term) return;
+        librarySearchInput.blur();
+        libraryPush({ type: "search", term, title: `Busca: ${term}` });
+    }
+
+    // ============================================================
+    // Minha biblioteca — conexão (Configurações)
+    // ============================================================
+    function renderJellyfinSetting() {
+        const J = window.Jellyfin;
+        const connected = !!J && J.isConfigured();
+        libraryOpenButton.hidden = !connected;
+        jellyfinSetting.innerHTML = "";
+        if (!J) return;
+
+        const p = document.createElement("p");
+        if (!connected) {
+            p.textContent = "Ouça as músicas do seu servidor Jellyfin aqui no app, junto com as rádios.";
+            jellyfinSetting.append(p, libraryButton("Conectar servidor", openJellyfinLogin, "ghost"));
+            return;
+        }
+
+        let host = J.server;
+        try {
+            host = new URL(J.server).host;
+        } catch (_) {}
+        p.textContent = `Conectado como ${J.userName} em ${host}.`;
+
+        const chips = document.createElement("div");
+        chips.className = "chips";
+        chips.setAttribute("role", "group");
+        chips.setAttribute("aria-label", "Qualidade do áudio");
+        [
+            ["original", "Qualidade original"],
+            ["data", "Economizar dados"]
+        ].forEach(([q, label]) => {
+            const c = document.createElement("button");
+            c.type = "button";
+            c.className = "chip" + (J.quality === q ? " is-active" : "");
+            c.textContent = label;
+            c.addEventListener("click", () => {
+                J.setQuality(q);
+                renderJellyfinSetting();
+                showToast(q === "data" ? "MP3 192 kbps a partir da próxima faixa." : "Arquivo original a partir da próxima faixa.");
+            });
+            chips.appendChild(c);
+        });
+
+        const disconnect = libraryButton(
+            "Desconectar",
+            async () => {
+                const ok = await confirmDialog("Desconectar do Jellyfin? O botão 🎵 some até você conectar de novo.", {
+                    title: "Minha biblioteca",
+                    okLabel: "Desconectar",
+                    danger: true
+                });
+                if (!ok) return;
+                if (isTrack(currentStation)) stopStream();
+                queue = { items: [], index: -1 };
+                Object.keys(libHomeCache).forEach((k) => delete libHomeCache[k]);
+                await J.logout();
+                renderJellyfinSetting();
+                showToast("Jellyfin desconectado.");
+            },
+            "ghost"
+        );
+        jellyfinSetting.append(p, chips, disconnect);
+    }
+
+    function modalField(label, input) {
+        const l = document.createElement("label");
+        l.className = "modal__field";
+        const s = document.createElement("span");
+        s.textContent = label;
+        l.append(s, input);
+        return l;
+    }
+
+    function modalInput(type, value, placeholder, autocomplete) {
+        const i = document.createElement("input");
+        i.className = "input";
+        i.type = type;
+        i.value = value || "";
+        i.placeholder = placeholder || "";
+        if (autocomplete) i.autocomplete = autocomplete;
+        i.autocapitalize = "off";
+        i.spellcheck = false;
+        return i;
+    }
+
+    function openJellyfinLogin() {
+        const J = window.Jellyfin;
+        const wrap = document.createElement("div");
+        const intro = document.createElement("p");
+        intro.style.margin = "0";
+        intro.textContent =
+            "Use o endereço https do Tailscale Serve (o celular precisa estar com o Tailscale ligado). A senha não fica salva — só a sessão.";
+
+        const server = modalInput("url", J.server, "https://servidor.tailnet.ts.net", "url");
+        server.inputMode = "url";
+        const user = modalInput("text", J.userName, "", "username");
+        const pass = modalInput("password", "", "", "current-password");
+        const home = modalInput("url", J.homeServer, "https://jellyfin.seudominio.com", "off");
+        home.inputMode = "url";
+
+        const adv = document.createElement("details");
+        adv.className = "modal__advanced";
+        const sum = document.createElement("summary");
+        sum.textContent = "Endereço em casa (opcional)";
+        const advHint = document.createElement("p");
+        advHint.textContent =
+            "Só se você tiver um proxy com HTTPS na rede de casa. O app tenta ele primeiro e cai pro endereço principal se não responder.";
+        adv.append(sum, advHint, modalField("Endereço em casa", home));
+        if (J.homeServer) adv.open = true;
+
+        const error = document.createElement("p");
+        error.className = "modal__error";
+        error.hidden = true;
+
+        wrap.append(
+            intro,
+            modalField("Endereço do servidor", server),
+            modalField("Usuário", user),
+            modalField("Senha", pass),
+            adv,
+            error
+        );
+
+        let busy = false;
+        const submit = async (close) => {
+            if (busy) return;
+            if (!server.value.trim() || !user.value.trim()) {
+                error.textContent = "Preencha o endereço e o usuário.";
+                error.hidden = false;
+                return;
+            }
+            busy = true;
+            error.hidden = true;
+            const btn = modal.actionsEl.lastElementChild;
+            btn.disabled = true;
+            btn.textContent = "Conectando…";
+            try {
+                await J.login({
+                    server: server.value,
+                    homeServer: home.value,
+                    username: user.value.trim(),
+                    password: pass.value
+                });
+                close("__done__");
+                Object.keys(libHomeCache).forEach((k) => delete libHomeCache[k]);
+                renderJellyfinSetting();
+                showToast(`Conectado! Toque no 🎵 lá em cima para abrir sua biblioteca.`, 4500);
+            } catch (err) {
+                error.textContent = err.message || "Não foi possível conectar.";
+                error.hidden = false;
+                btn.disabled = false;
+                btn.textContent = "Conectar";
+            } finally {
+                busy = false;
+            }
+        };
+
+        const modal = buildModal({
+            title: "Conectar ao Jellyfin",
+            body: wrap,
+            actions: [
+                { label: "Cancelar", variant: "ghost", value: null },
+                { label: "Conectar", variant: "primary", onClick: submit }
+            ]
+        });
+        [server, user, pass, home].forEach((i) =>
+            i.addEventListener("keydown", (e) => {
+                if (e.key === "Enter") {
+                    e.preventDefault();
+                    submit(modal.close);
+                }
+            })
+        );
+        setTimeout(() => (server.value ? (user.value ? pass : user) : server).focus(), 40);
     }
 
     // ============================================================
@@ -1828,10 +2529,38 @@
     function wireEvents() {
         searchOpenButton.addEventListener("click", openSearch);
         searchCloseButton.addEventListener("click", () => closeSearch());
-        window.addEventListener("popstate", () => {
+        window.addEventListener("popstate", (e) => {
+            const st = e.state;
+            if (!libraryScreen.hidden && st && st.overlay === "library") {
+                libraryGoTo(st.depth);
+                return;
+            }
             closeSearch(true);
             exitCarMode(true);
+            closeLibrary(true);
         });
+
+        // Minha biblioteca
+        libraryOpenButton.addEventListener("click", openLibrary);
+        libraryBackButton.addEventListener("click", () => history.back());
+        librarySearchButton.addEventListener("click", searchLibrary);
+        librarySearchInput.addEventListener("keydown", (e) => {
+            if (e.key === "Enter") searchLibrary();
+        });
+        libraryTabs.addEventListener("click", (e) => {
+            const tab = e.target.closest(".tab");
+            const view = libStack[0];
+            if (!tab || !view || view.tab === tab.dataset.tab) return;
+            view.tab = tab.dataset.tab;
+            view.scroll = 0;
+            renderLibraryView();
+        });
+        libraryShuffleAllButton.addEventListener("click", () =>
+            playFromServer(() => window.Jellyfin.randomTracks(), "Sorteando músicas…")
+        );
+        libraryMoreButton.addEventListener("click", loadMoreLibrary);
+        queuePrevButton.addEventListener("click", queuePrev);
+        queueStopButton.addEventListener("click", () => stopStream());
         searchButton.addEventListener("click", searchStations);
         searchInput.addEventListener("keydown", (e) => {
             if (e.key === "Enter") searchStations();
@@ -1942,6 +2671,10 @@
                 showToast("Selecione uma rádio para tocar.");
                 return;
             }
+            if (isTrack(currentStation)) {
+                toggleTrackPause();
+                return;
+            }
             if (
                 currentStation.url_resolved.includes(".m3u8") &&
                 !currentHls &&
@@ -1962,19 +2695,23 @@
                 })
                 .catch((err) => handlePlayError(currentStation, err));
         });
-        stopButton.addEventListener("click", () => stopStream());
+        stopButton.addEventListener("click", () => (isTrack(currentStation) ? queueStep(1) : stopStream()));
 
         // Modo Carro
         carModeButton.addEventListener("click", enterCarMode);
         carExitButton.addEventListener("click", () => exitCarMode());
         carModeScreen.addEventListener("click", requestCarFullscreen);
         carPlayButton.addEventListener("click", () => {
+            if (isTrack(currentStation)) {
+                toggleTrackPause();
+                return;
+            }
             const state = playerBar.dataset.state;
             if (state === "playing" || state === "loading") stopStream();
             else if (currentStation) playStream(currentStation);
         });
-        carPrevButton.addEventListener("click", () => carStep(-1));
-        carNextButton.addEventListener("click", () => carStep(1));
+        carPrevButton.addEventListener("click", () => (isTrack(currentStation) ? queuePrev() : carStep(-1)));
+        carNextButton.addEventListener("click", () => (isTrack(currentStation) ? queueStep(1) : carStep(1)));
         carArt.addEventListener("error", () => {
             carArt.hidden = true;
         });
@@ -1982,6 +2719,7 @@
             if (e.key !== "Escape") return;
             if (carModeScreen && !carModeScreen.hidden) exitCarMode();
             else if (!searchScreen.hidden && settingsSheet.hidden) closeSearch();
+            else if (!libraryScreen.hidden && settingsSheet.hidden && !modalRoot.children.length) history.back();
         });
 
         playerExpandButton.addEventListener("click", () => {
@@ -1994,11 +2732,22 @@
             setPlayerState("playing");
             updatePlayButtons(true);
             markPlayingItems();
+            if (window.RadioWakeLock) window.RadioWakeLock.request();
         });
         audioPlayer.addEventListener("waiting", () => {
             if (currentStation && playerBar.dataset.state === "playing") setPlayerState("loading");
         });
-        audioPlayer.addEventListener("ended", () => stopStream());
+        // Pausa de faixa da biblioteca, venha de onde vier (botão, notificação,
+        // fone desconectado). A pausa que o próprio stopStream faz ao trocar
+        // de faixa chega aqui com o <audio> já tocando a próxima — ignorada.
+        audioPlayer.addEventListener("pause", () => {
+            if (!isTrack(currentStation) || !audioPlayer.paused || audioPlayer.ended) return;
+            setPlayerState("paused");
+            updatePlayButtons(false);
+            if (window.RadioWakeLock) window.RadioWakeLock.release();
+        });
+        audioPlayer.addEventListener("timeupdate", updateTrackProgress);
+        audioPlayer.addEventListener("ended", () => (isTrack(currentStation) ? onTrackEnded() : stopStream()));
         audioPlayer.addEventListener("error", () => {
             if (currentStation && !currentHls && !streamSettling) handlePlayError(currentStation, new Error("audio"));
         });
@@ -2106,7 +2855,7 @@
             if (/^(INPUT|TEXTAREA|SELECT|BUTTON)$/.test(tag)) return;
             if (!currentStation) return;
             e.preventDefault();
-            if (playerBar.dataset.state === "playing") stopStream();
+            if (playerBar.dataset.state === "playing" && !isTrack(currentStation)) stopStream();
             else playButton.click();
         });
 
@@ -2146,6 +2895,7 @@
 
         wireEvents();
         wireMediaSession();
+        renderJellyfinSetting();
         renderFavorites();
         renderRecents();
         updateVolumeUI();

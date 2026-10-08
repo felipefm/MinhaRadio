@@ -1,4 +1,4 @@
-# Rádio Player Online 📻 — v3.4
+# Rádio Player Online 📻 — v3.5
 
 No silêncio que por vezes nos cerca, a busca por uma melodia, uma voz ou uma
 notícia se faz presente. Este projeto nasce como um humilde portal para esse
@@ -12,7 +12,8 @@ categoria, estatísticas de uso, player com sleep timer e um Modo Carro (tela
 cheia, botões grandes, presets das rádios mais ouvidas) para usar com o
 celular preso no carro. A tela inicial fica com favoritos, recentes e mais
 ouvidas; busca e "adicionar manualmente" (uso eventual) ficam numa tela
-própria, aberta pelo 🔍 da barra superior. HTML/CSS/JS puro, sem build e sem framework. É um
+própria, aberta pelo 🔍 da barra superior. Opcionalmente toca também as
+músicas de um servidor **Jellyfin** pessoal (ver "Minha biblioteca"). HTML/CSS/JS puro, sem build e sem framework. É um
 **PWA** — instalável e com o "casco" funcionando offline.
 
 ## Como publicar
@@ -29,6 +30,7 @@ que o Service Worker não registra em `file://`.
 | `index.html` | Estrutura e marcação de todas as seções. |
 | `style.css` | Estilos. Design tokens (espaçamento, raios, cores, sombras) em `:root`; tema escuro e cores de destaque sobrescrevem tokens em `body.dark-theme` / `body.title-color-*`. |
 | `app.js` | Tudo o mais: player (HLS.js + `<audio>`), Media Session, busca e filtros, favoritos e categorias, recentes, Modo Carro, sleep timer, modais in-app, tema, PWA. |
+| `jellyfin.js` | Cliente do Jellyfin (login, listagens, URLs de áudio e capa) — `window.Jellyfin`. Fila e telas da biblioteca ficam no `app.js`. |
 | `radioData.js` | Estatísticas de uso — classe `RadioAnalytics`, isolada, grava em IndexedDB. `window.radioData`. |
 | `wakeLock.js` | Screen Wake Lock. Expõe `window.RadioWakeLock`; o `app.js` chama `request()`/`release()` ao tocar/parar. |
 | `sw.js` | Service Worker: cacheia o app shell (rede primeiro, cache como fallback offline); nunca cacheia áudio nem a API. Bump em `CACHE_NAME` a cada release. |
@@ -50,6 +52,7 @@ Tudo local, nada vai para servidor.
 | `radioTitleColor` | cor de destaque |
 | `radioSearchFilters` | último país/tag/idioma usados |
 | `radioVolume` | último volume |
+| `radioJellyfin` | endereço(s) do Jellyfin, usuário, token da sessão e qualidade. A senha nunca é salva. |
 
 **IndexedDB** — banco `radioAnalyticsDB`, store `analytics`: clicks e tempo de
 escuta por estação. Alimenta "Estatísticas" e "Top mais ouvidas".
@@ -83,7 +86,7 @@ simplesmente não aparece, sem quebrar o resto:
 | Capa/faixa na notificação e tela de bloqueio | ✅ Media Session | ⚠️ parcial |
 | Capa/faixa no painel do carro (Bluetooth) | ✅ se o carro suportar (ver abaixo) | ⚠️ parcial |
 | Botões do volante (play/stop, próxima/anterior) | ✅ | ⚠️ parcial |
-| "Voltar" fecha a busca/Modo Carro em vez de sair do app | ✅ | n/a |
+| "Voltar" fecha a busca/biblioteca/Modo Carro em vez de sair do app | ✅ | n/a |
 
 ## Bluetooth do carro (Media Session)
 
@@ -128,6 +131,56 @@ também cai de volta no comportamento padrão silenciosamente. A busca de capa
 usa a API pública da iTunes (sem chave, sem custo) como alternativa para
 estações que não mandam a própria arte junto do metadado.
 
+## Minha biblioteca (Jellyfin)
+
+Toca as músicas de um servidor Jellyfin pessoal dentro do app: playlists,
+álbuns, artistas, busca, "tocar tudo no aleatório" e "mix parecido" (o
+Instant Mix do Jellyfin). Fica invisível até ser conectada: o botão 🎵 da
+barra superior só aparece depois de conectar em **Configurações → Minha
+biblioteca**.
+
+**Por que o Tailscale Serve:** o app é servido em HTTPS, e o navegador
+bloqueia áudio e chamadas HTTP numa página HTTPS — então
+`http://ip-do-servidor:8096` não funciona. O Tailscale Serve dá ao servidor
+um endereço `https://<máquina>.<tailnet>.ts.net` com certificado válido,
+acessível só de dentro da tailnet (nada fica exposto na internet). Em casa o
+Tailscale conecta direto pela rede local, então não há perda de velocidade.
+
+Configuração (uma vez só):
+
+1. No painel do Tailscale (admin → DNS), ligar **MagicDNS** e **HTTPS
+   Certificates**.
+2. No servidor, publicar a porta do Jellyfin. Com o Tailscale num container
+   em modo `host` (app da BigBear no CasaOS):
+   ```bash
+   sudo docker exec big-bear-tailscale tailscale serve --bg 8096
+   sudo docker exec big-bear-tailscale tailscale serve status
+   ```
+   **Ao renomear a máquina no Tailscale**, rode `tailscale serve reset` e o
+   comando acima de novo — a regra antiga fica presa ao nome antigo (sintoma:
+   "404 not found" no endereço novo).
+3. No app: ⚙️ → Minha biblioteca → Conectar servidor, com o endereço `https://`
+   do passo 2, usuário e senha do Jellyfin. O celular precisa estar com o
+   Tailscale ligado (no Android, "VPN sempre ativa" evita esquecer).
+
+Detalhes:
+
+- **Qualidade:** "original" toca o arquivo como está (FLAC, MP3, AAC, Opus);
+  "economizar dados" pede ao servidor MP3 192 kbps — útil no 4G.
+- **Endereço em casa (opcional):** se um dia houver um proxy reverso com
+  HTTPS na rede local, ele pode ser informado no "Avançado" do login; o app
+  tenta ele primeiro (2,5 s) e cai pro endereço do Tailscale se não responder.
+- **Player:** faixa tem pausa de verdade (▶/❚❚), ⏭ na barra, e ⏮/■ no painel
+  expandido. Na notificação e no Bluetooth do carro, ⏭/⏮ seguem a fila e a
+  barra de posição é arrastável. O Modo Carro também segue a fila.
+- **Separado das rádios:** faixas não entram em estatísticas, recentes,
+  "Top mais ouvidas" nem nos presets do Modo Carro.
+- **Segurança:** o token da sessão fica no `localStorage` deste aparelho e vai
+  na URL do áudio (o `<audio>` não manda headers). Ele vale só pro seu
+  servidor e pode ser revogado no Jellyfin (Painel → Dispositivos) ou com
+  "Desconectar" no app.
+- O Service Worker não intercepta nada do Jellyfin (outro domínio).
+
 ## Licença
 
 [CC BY-NC 4.0](https://creativecommons.org/licenses/by-nc/4.0/) — livre para
@@ -135,6 +188,8 @@ compartilhar e adaptar, com atribuição e para uso não comercial.
 
 ## Ideias para próximas versões
 
+- Modo Mix: intercalar rádio e biblioteca ("1 da rádio, 3 da playlist")
+- Playlists do Jellyfin como presets do Modo Carro
 - Reconexão automática do stream em quedas de conexão
 - Agregador de podcasts
 - Sincronização opcional de estatísticas entre dispositivos

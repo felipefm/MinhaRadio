@@ -1147,6 +1147,52 @@ select.input { cursor: pointer; -webkit-appearance: auto; appearance: auto; }
 .car-preset.is-active { background: var(--accent-soft); border-color: var(--accent); }
 .car-preset.is-active b { color: var(--accent); }
 
+/* ---------- Minha biblioteca (Jellyfin) ---------- */
+.library-home { display: flex; flex-direction: column; gap: var(--sp-2); }
+.library-home .tabs { margin: var(--sp-2) 0 0; }
+.library-actions { display: flex; flex-wrap: wrap; gap: var(--sp-2); margin-bottom: var(--sp-1); }
+.library-more { align-self: center; margin-top: var(--sp-2); }
+/* Modo Carro com faixa: o ponto vermelho pulsando é de "ao vivo" (rádio). */
+.car-mode.is-track[data-state="playing"] .car-mode__dot { background: var(--accent); animation: none; }
+.car-mode.is-track[data-state="playing"] .car-mode__status { color: var(--accent); }
+.station-favicon-ph.is-number { font-size: var(--fs-sm); font-weight: 700; color: var(--text-muted); }
+
+/* Faixa tocando: barra de progresso fina no topo do player. */
+.player__progress {
+    display: none;
+    position: absolute;
+    left: 0;
+    right: 0;
+    top: -1px;
+    height: 3px;
+}
+.player.is-track .player__progress { display: block; }
+.player__progress span {
+    display: block;
+    height: 100%;
+    width: 0;
+    background: var(--accent);
+    transition: width 0.25s linear;
+}
+.player__queue-status { font-size: var(--fs-sm); font-weight: 600; color: var(--text-muted); margin-left: auto; }
+
+.jellyfin-setting { display: flex; flex-direction: column; align-items: flex-start; gap: var(--sp-2); }
+.jellyfin-setting p { margin: 0; font-size: var(--fs-sm); color: var(--text-muted); }
+
+.modal__field {
+    display: flex;
+    flex-direction: column;
+    gap: var(--sp-1);
+    margin-top: var(--sp-3);
+    font-weight: 600;
+    color: var(--text);
+}
+.modal__body .modal__field .input { margin-top: 0; }
+.modal__advanced { margin-top: var(--sp-3); }
+.modal__advanced summary { cursor: pointer; font-weight: 600; color: var(--accent); }
+.modal__advanced p { margin: var(--sp-2) 0 0; }
+.modal__error { margin: var(--sp-3) 0 0; color: var(--danger); font-weight: 600; }
+
 /* ---------- Reduzir movimento ---------- */
 @media (prefers-reduced-motion: reduce) {
     *, *::before, *::after {
