@@ -188,7 +188,6 @@ compartilhar e adaptar, com atribuição e para uso não comercial.
 
 ## Ideias para próximas versões
 
-- Modo Mix: intercalar rádio e biblioteca ("1 da rádio, 3 da playlist")
 - Playlists do Jellyfin como presets do Modo Carro
 - Reconexão automática do stream em quedas de conexão
 - Agregador de podcasts
