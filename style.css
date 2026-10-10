@@ -53,6 +53,8 @@
     --shadow-lg: 0 12px 32px rgba(15, 23, 42, 0.18);
 
     --player-h: 66px;
+    /* --player-live: altura real do player, medida pelo app.js */
+    --player-space: var(--player-live, calc(var(--player-h) + env(safe-area-inset-bottom)));
     --maxw: 720px;
     --tap: 44px;
 }
@@ -124,7 +126,7 @@ img { max-width: 100%; }
 }
 
 .app__main {
-    padding-bottom: calc(var(--player-h) + var(--sp-6) + env(safe-area-inset-bottom));
+    padding-bottom: calc(var(--player-space) + var(--sp-6));
     display: flex;
     flex-direction: column;
     gap: var(--sp-4);
@@ -836,7 +838,7 @@ select.input { cursor: pointer; -webkit-appearance: auto; appearance: auto; }
 .toast {
     position: fixed;
     left: 50%;
-    bottom: calc(var(--player-h) + var(--sp-4) + env(safe-area-inset-bottom));
+    bottom: calc(var(--player-space) + var(--sp-4));
     transform: translate(-50%, 20px);
     z-index: 80;
     min-width: 240px;
@@ -886,7 +888,7 @@ select.input { cursor: pointer; -webkit-appearance: auto; appearance: auto; }
     .card__title { font-size: var(--fs-md); }
     .station-item { flex-wrap: wrap; }
     .station-actions { width: 100%; justify-content: flex-end; }
-    .toast { bottom: calc(var(--player-h) + var(--sp-3) + env(safe-area-inset-bottom)); }
+    .toast { bottom: calc(var(--player-space) + var(--sp-3)); }
 }
 
 /* ---------- Tela de busca ---------- */
@@ -921,7 +923,7 @@ select.input { cursor: pointer; -webkit-appearance: auto; appearance: auto; }
     width: 100%;
     max-width: var(--maxw);
     margin: 0 auto;
-    padding: var(--sp-4) var(--sp-4) calc(var(--player-h) + var(--sp-6) + env(safe-area-inset-bottom));
+    padding: var(--sp-4) var(--sp-4) calc(var(--player-space) + var(--sp-6));
     display: flex;
     flex-direction: column;
     gap: var(--sp-2);
@@ -1157,23 +1159,109 @@ select.input { cursor: pointer; -webkit-appearance: auto; appearance: auto; }
 .car-mode.is-track[data-state="playing"] .car-mode__status { color: var(--accent); }
 .station-favicon-ph.is-number { font-size: var(--fs-sm); font-weight: 700; color: var(--text-muted); }
 
-/* Faixa tocando: barra de progresso fina no topo do player. */
-.player__progress {
-    display: none;
-    position: absolute;
-    left: 0;
-    right: 0;
-    top: -1px;
-    height: 3px;
+/* Barra de tempo arrastável (player e Modo Carro). O preenchimento vem
+   de --seek-pct, que o app.js atualiza. */
+.seek {
+    -webkit-appearance: none;
+    appearance: none;
+    flex: 1 1 auto;
+    min-width: 0;
+    height: 28px;
+    margin: 0;
+    background: transparent;
+    cursor: pointer;
+    --seek-pct: 0%;
+    --seek-h: 4px;
+    --seek-thumb: 14px;
 }
-.player.is-track .player__progress { display: block; }
-.player__progress span {
-    display: block;
-    height: 100%;
-    width: 0;
+.seek::-webkit-slider-runnable-track {
+    height: var(--seek-h);
+    border-radius: 999px;
+    background: linear-gradient(to right, var(--accent) var(--seek-pct), var(--border-strong) var(--seek-pct));
+}
+.seek::-moz-range-track {
+    height: var(--seek-h);
+    border-radius: 999px;
+    background: linear-gradient(to right, var(--accent) var(--seek-pct), var(--border-strong) var(--seek-pct));
+}
+.seek::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    width: var(--seek-thumb);
+    height: var(--seek-thumb);
+    margin-top: calc((var(--seek-h) - var(--seek-thumb)) / 2);
+    border-radius: 50%;
+    border: none;
     background: var(--accent);
-    transition: width 0.25s linear;
 }
+.seek::-moz-range-thumb {
+    width: var(--seek-thumb);
+    height: var(--seek-thumb);
+    border-radius: 50%;
+    border: none;
+    background: var(--accent);
+}
+.seek--lg { height: 44px; --seek-h: 8px; --seek-thumb: 26px; }
+
+.player__seek {
+    display: none;
+    align-items: center;
+    gap: var(--sp-2);
+    max-width: var(--maxw);
+    margin: 0 auto;
+    padding: var(--sp-1) var(--sp-4) 0;
+}
+.player.is-track .player__seek { display: flex; }
+.player__time {
+    font-size: var(--fs-xs);
+    font-weight: 600;
+    color: var(--text-muted);
+    font-variant-numeric: tabular-nums;
+    min-width: 2.6em;
+    text-align: center;
+}
+.player.is-track .player__main { height: calc(var(--player-h) - 10px); }
+
+.fav-btn.is-fav { color: var(--danger); }
+
+/* Modo Carro com faixa: barra de tempo grande + ❤ no lugar do equalizador. */
+.car-mode__seek {
+    display: none;
+    align-items: center;
+    gap: var(--sp-2);
+    padding: var(--sp-2) var(--sp-4) 0;
+    flex-shrink: 0;
+}
+.car-mode.is-track .car-mode__seek { display: flex; }
+.car-mode.is-track .car-mode__eq { display: none; }
+.car-mode__time {
+    font-size: var(--fs-md);
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+    color: var(--text-muted);
+    min-width: 3em;
+    text-align: center;
+}
+.car-mode__fav {
+    appearance: none;
+    flex-shrink: 0;
+    width: 52px;
+    height: 52px;
+    border-radius: 50%;
+    border: 1px solid var(--border-strong);
+    background: var(--surface);
+    color: var(--text);
+    font-size: 1.5rem;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+.car-mode__fav:active { transform: scale(0.94); }
+.car-mode__fav.is-fav { color: var(--danger); border-color: var(--danger); }
+
+/* Tela cheia: sobe tudo ~10px. A margem da câmera (safe-area) continua. */
+:root:fullscreen .car-mode__top { padding-top: 2px; }
 .player__queue-status { font-size: var(--fs-sm); font-weight: 600; color: var(--text-muted); margin-left: auto; }
 
 .jellyfin-setting { display: flex; flex-direction: column; align-items: flex-start; gap: var(--sp-2); }
@@ -1188,9 +1276,6 @@ select.input { cursor: pointer; -webkit-appearance: auto; appearance: auto; }
     color: var(--text);
 }
 .modal__body .modal__field .input { margin-top: 0; }
-.modal__advanced { margin-top: var(--sp-3); }
-.modal__advanced summary { cursor: pointer; font-weight: 600; color: var(--accent); }
-.modal__advanced p { margin: var(--sp-2) 0 0; }
 .modal__error { margin: var(--sp-3) 0 0; color: var(--danger); font-weight: 600; }
 
 /* ---------- Reduzir movimento ---------- */

@@ -102,7 +102,14 @@
     const queuePrevButton = $("queuePrevButton");
     const queueStopButton = $("queueStopButton");
     const queueStatus = $("queueStatus");
-    const trackProgress = $("trackProgress");
+    const trackSeek = $("trackSeek");
+    const trackElapsed = $("trackElapsed");
+    const trackDuration = $("trackDuration");
+    const trackFavButton = $("trackFavButton");
+    const carSeek = $("carSeek");
+    const carElapsed = $("carElapsed");
+    const carDuration = $("carDuration");
+    const carFavButton = $("carFavButton");
 
     // ---------- Estado ----------
     const LS = {
@@ -112,7 +119,8 @@
         color: "radioTitleColor",
         recents: "radioRecents",
         filters: "radioSearchFilters",
-        volume: "radioVolume"
+        volume: "radioVolume",
+        played: "radioJellyfinPlayed"
     };
 
     const API_URLS = [
@@ -159,6 +167,11 @@
     let libToken = 0;
     const libHomeCache = {};
     let positionStateSet = false;
+    // ❤ do Jellyfin por id de faixa — compartilhado entre listas, player e
+    // Modo Carro, pra que marcar num lugar apareça em todos.
+    const favState = new Map();
+    // Enquanto o dedo arrasta a barra de tempo, o timeupdate não mexe nela.
+    let seekDragging = false;
 
     // ============================================================
     // Utilidades
@@ -1071,6 +1084,8 @@
         const track = isTrack(currentStation);
         playerBar.classList.toggle("is-track", track);
         queueRow.hidden = !track;
+        trackFavButton.hidden = !track;
+        refreshFavUI();
         if (track) {
             const playing = !audioPlayer.paused;
             playButton.disabled = false;
@@ -1284,6 +1299,7 @@
         carNextButton.setAttribute("aria-label", track ? "Próxima faixa" : "Próxima estação");
 
         refreshCarPresetActive();
+        updateTrackProgress();
     }
 
     function setArtImage(el, url) {
@@ -1461,17 +1477,39 @@
         setMediaMetadata({ title: track.name, artist: track.artist, album: track.album, art: track.favicon });
     }
 
-    // Barra de progresso fina no player + posição na notificação (que vira
-    // uma barra arrastável no Android). Só pra faixas; rádio ao vivo não tem.
+    function formatTime(sec) {
+        const s = Math.max(0, Math.floor(sec || 0));
+        const h = Math.floor(s / 3600);
+        const m = Math.floor((s % 3600) / 60);
+        const ss = String(s % 60).padStart(2, "0");
+        return h ? `${h}:${String(m).padStart(2, "0")}:${ss}` : `${m}:${ss}`;
+    }
+
+    function trackDurationSec() {
+        if (!isTrack(currentStation)) return 0;
+        return isFinite(audioPlayer.duration) && audioPlayer.duration > 0
+            ? audioPlayer.duration
+            : currentStation.duration || 0;
+    }
+
+    // Barra de tempo arrastável (player e Modo Carro) + posição na
+    // notificação do Android. Só pra faixas; rádio ao vivo não tem.
     function updateTrackProgress() {
-        const track = isTrack(currentStation);
-        const dur = !track
-            ? 0
-            : isFinite(audioPlayer.duration) && audioPlayer.duration > 0
-              ? audioPlayer.duration
-              : currentStation.duration || 0;
+        const dur = trackDurationSec();
         const pos = Math.min(audioPlayer.currentTime || 0, dur);
-        trackProgress.style.width = dur ? (pos / dur) * 100 + "%" : "0";
+        const durLabel = formatTime(dur);
+        [
+            [trackSeek, trackElapsed, trackDuration],
+            [carSeek, carElapsed, carDuration]
+        ].forEach(([seek, elapsed, total]) => {
+            if (!seek) return;
+            seek.max = String(Math.floor(dur));
+            total.textContent = durLabel;
+            if (seekDragging) return;
+            seek.value = String(Math.floor(pos));
+            seek.style.setProperty("--seek-pct", dur ? (pos / dur) * 100 + "%" : "0%");
+            elapsed.textContent = formatTime(pos);
+        });
 
         if (!hasMediaSession || !navigator.mediaSession.setPositionState) return;
         try {
@@ -1498,6 +1536,31 @@
     async function mediaStep(delta) {
         if (!carPresets.length) await loadCarPresets();
         carStep(delta);
+    }
+
+    // Arrastar mostra o tempo; soltar pula pra ele.
+    function wireSeek(seek, elapsed) {
+        if (!seek) return;
+        seek.addEventListener("input", () => {
+            seekDragging = true;
+            const dur = trackDurationSec();
+            elapsed.textContent = formatTime(+seek.value);
+            seek.style.setProperty("--seek-pct", dur ? (+seek.value / dur) * 100 + "%" : "0%");
+        });
+        seek.addEventListener("change", () => {
+            seekDragging = false;
+            if (isTrack(currentStation) && trackDurationSec()) audioPlayer.currentTime = +seek.value;
+            updateTrackProgress();
+        });
+    }
+
+    // Altura real do player (cresce com a barra de tempo e o painel aberto):
+    // as telas usam isso no espaço do fim, pra nada ficar escondido atrás dele.
+    function watchPlayerHeight() {
+        const apply = () => document.documentElement.style.setProperty("--player-live", playerBar.offsetHeight + "px");
+        apply();
+        if (window.ResizeObserver) new ResizeObserver(apply).observe(playerBar);
+        else window.addEventListener("resize", apply);
     }
 
     function wireMediaSession() {
@@ -1686,8 +1749,10 @@
     // ============================================================
     function trackToStation(item) {
         const J = window.Jellyfin;
+        noteFavorites([item]);
         return {
             kind: "track",
+            itemId: item.Id,
             stationuuid: "jf-" + item.Id,
             name: item.Name || "Sem título",
             artist: item.AlbumArtist || (item.Artists || []).join(", "),
@@ -1707,24 +1772,139 @@
         return a;
     }
 
-    async function playQueue(items, start = 0, { shuffle = false } = {}) {
-        const list = (items || []).filter((i) => i && i.Id && (i.Type === "Audio" || i.MediaType === "Audio"));
+    // Mesma música em mais de um álbum (coletânea, deluxe, remaster) tem id
+    // diferente no Jellyfin — compara artista + título "limpos".
+    function trackKey(item) {
+        const norm = (t) =>
+            String(t || "")
+                .toLowerCase()
+                .normalize("NFD")
+                .replace(/[\u0300-\u036f]/g, "")
+                .replace(/[([][^)\]]*(remaster|deluxe|edition|edicao|mono|stereo|version|versao|bonus)[^)\]]*[)\]]/g, "")
+                .replace(/\s-\s.*(remaster|edition|version|mono|stereo).*$/, "")
+                .replace(/[^a-z0-9]+/g, " ")
+                .trim();
+        // Título sem letras latinas (japonês, por ex.) vira vazio — usa o original.
+        const key = (t) => norm(t) || String(t || "").toLowerCase();
+        const artist = (item.Artists && item.Artists[0]) || item.AlbumArtist || "";
+        return key(artist) + "|" + key(item.Name);
+    }
+
+    // Tira faixas repetidas: sempre pelo id; com byKey, também pela música.
+    function uniqueTracks(list, { byKey = false } = {}) {
+        const seen = new Set();
+        return (list || []).filter((i) => {
+            const keys = byKey ? [i.Id, trackKey(i)] : [i.Id];
+            if (keys.some((k) => seen.has(k))) return false;
+            keys.forEach((k) => seen.add(k));
+            return true;
+        });
+    }
+
+    function isAudioItem(i) {
+        return !!i && !!i.Id && (i.Type === "Audio" || i.MediaType === "Audio");
+    }
+
+    function playQueue(items, start = 0, { shuffle = false } = {}) {
+        const list = uniqueTracks((items || []).filter(isAudioItem));
         if (!list.length) {
             showToast("Nada para tocar aqui.");
             return;
         }
         queue = { items: shuffle ? shuffled(list) : list, index: -1 };
-        // Escolhe o endereço (casa ou Tailscale) antes de montar a URL do áudio.
-        try {
-            await window.Jellyfin.ensureServer();
-        } catch (_) {}
-        playQueueIndex(shuffle ? 0 : Math.max(0, Math.min(start, queue.items.length - 1)));
+        playQueueIndex(shuffle ? 0 : Math.max(0, Math.min(start, list.length - 1)));
     }
 
     function playQueueIndex(i) {
         if (i < 0 || i >= queue.items.length) return;
         queue.index = i;
+        rememberPlayed(queue.items[i].Id);
         playStream(trackToStation(queue.items[i]));
+    }
+
+    // Últimas faixas tocadas — o "Tocar tudo no aleatório" evita repeti-las.
+    const PLAYED_MAX = 400;
+    function loadPlayed() {
+        try {
+            const a = JSON.parse(localStorage.getItem(LS.played));
+            return Array.isArray(a) ? a : [];
+        } catch (_) {
+            return [];
+        }
+    }
+
+    function rememberPlayed(id) {
+        const list = loadPlayed().filter((x) => x !== id);
+        list.push(id);
+        try {
+            localStorage.setItem(LS.played, JSON.stringify(list.slice(-PLAYED_MAX)));
+        } catch (_) {}
+    }
+
+    // Sorteia a biblioteca toda: busca mais que o necessário, tira repetidas
+    // e as que tocaram há pouco, e toca um lote. Acabou o lote, para.
+    async function shuffleAll() {
+        showToast("Sorteando músicas…");
+        try {
+            const res = await window.Jellyfin.randomTracks(400);
+            const all = uniqueTracks(((res && res.Items) || []).filter(isAudioItem), { byKey: true });
+            const order = loadPlayed();
+            const played = new Set(order);
+            let fresh = all.filter((i) => !played.has(i.Id));
+            // Biblioteca pequena (quase tudo já tocou): completa com as tocadas há mais tempo.
+            if (fresh.length < 50) {
+                const old = all.filter((i) => played.has(i.Id)).sort((a, b) => order.indexOf(a.Id) - order.indexOf(b.Id));
+                fresh = fresh.concat(old);
+            }
+            playQueue(fresh.slice(0, 150));
+        } catch (err) {
+            showToast(err.message || "Erro ao carregar.", 4000);
+        }
+    }
+
+    // ---------- Favoritos (❤ do Jellyfin) ----------
+    function noteFavorites(items) {
+        (items || []).forEach((i) => {
+            if (i && i.Id && i.UserData) favState.set(i.Id, !!i.UserData.IsFavorite);
+        });
+    }
+
+    function setFavGlyph(btn, on) {
+        btn.textContent = on ? "❤" : "♡";
+        btn.classList.toggle("is-fav", on);
+        btn.setAttribute("aria-pressed", String(on));
+        const label = on ? "Remover das favoritas" : "Adicionar às favoritas";
+        btn.title = label;
+        btn.setAttribute("aria-label", label);
+    }
+
+    function refreshFavUI() {
+        const id = isTrack(currentStation) ? currentStation.itemId : null;
+        const on = !!id && !!favState.get(id);
+        setFavGlyph(trackFavButton, on);
+        setFavGlyph(carFavButton, on);
+        document.querySelectorAll("[data-fav-id]").forEach((b) => setFavGlyph(b, !!favState.get(b.dataset.favId)));
+    }
+
+    async function toggleFavorite(itemId) {
+        if (!itemId || !window.Jellyfin) return;
+        const on = !favState.get(itemId);
+        favState.set(itemId, on);
+        refreshFavUI();
+        try {
+            await window.Jellyfin.setFavorite(itemId, on);
+            delete libHomeCache.favorites;
+            showToast(on ? "❤ Adicionada às favoritas." : "Removida das favoritas.");
+            const view = libStack[libStack.length - 1];
+            if (!libraryScreen.hidden && view && view.type === "home" && view.tab === "favorites") {
+                view.scroll = libraryBody.scrollTop;
+                renderLibraryView();
+            }
+        } catch (err) {
+            favState.set(itemId, !on);
+            refreshFavUI();
+            showToast(err.message || "Não foi possível salvar o favorito.", 4000);
+        }
     }
 
     function queueStep(delta) {
@@ -1769,7 +1949,8 @@
     const LIB_TABS = {
         playlists: { label: "Playlists", load: (start) => window.Jellyfin.playlists({ start }) },
         albums: { label: "Álbuns", load: (start) => window.Jellyfin.albums({ start }) },
-        artists: { label: "Artistas", load: (start) => window.Jellyfin.artists({ start }) }
+        artists: { label: "Artistas", load: (start) => window.Jellyfin.artists({ start }) },
+        favorites: { label: "Favoritas", load: (start) => window.Jellyfin.favoriteTracks({ start }) }
     };
 
     function openLibrary() {
@@ -1828,6 +2009,8 @@
                 return J.playlistTracks(view.item.Id);
             case "artist":
                 return J.artistAlbums(view.item.Id);
+            case "mix":
+                return J.instantMix(view.item.Id);
             case "search":
                 return J.search(view.term);
         }
@@ -1862,7 +2045,11 @@
             emptyState(libraryList, "Carregando…");
             try {
                 const res = await loadLibraryView(view);
-                data = { items: (res && res.Items) || [], total: (res && res.TotalRecordCount) || 0 };
+                let items = (res && res.Items) || [];
+                // Mix: a lista mostrada é exatamente a fila que vai tocar.
+                if (view.type === "mix") items = uniqueTracks(items.filter(isAudioItem), { byKey: true });
+                noteFavorites(items);
+                data = { items, total: (res && res.TotalRecordCount) || items.length };
             } catch (err) {
                 if (token === libToken) libraryError(err);
                 return;
@@ -1874,6 +2061,10 @@
 
         drawLibraryView(view, data);
         libraryBody.scrollTop = view.scroll || 0;
+        if (view.autoplay) {
+            view.autoplay = false;
+            playQueue(data.items);
+        }
     }
 
     async function loadMoreLibrary() {
@@ -1884,6 +2075,7 @@
         libraryMoreButton.disabled = true;
         try {
             const res = await loadLibraryView(view, data.items.length);
+            noteFavorites((res && res.Items) || []);
             data.items = data.items.concat((res && res.Items) || []);
             data.total = (res && res.TotalRecordCount) || data.total;
             const keep = libraryBody.scrollTop;
@@ -1957,7 +2149,12 @@
         if (action) {
             const actions = document.createElement("div");
             actions.className = "station-actions";
-            actions.appendChild(iconButton(action.glyph, action.title, "", action.onClick));
+            const b = iconButton(action.glyph, action.title, action.favId ? "fav-btn" : "", action.onClick);
+            if (action.favId) {
+                b.dataset.favId = action.favId;
+                setFavGlyph(b, !!favState.get(action.favId));
+            }
+            actions.appendChild(b);
             item.appendChild(actions);
         }
         return item;
@@ -1981,14 +2178,9 @@
         }
     }
 
-    async function playFromServer(loader, label) {
-        showToast(label);
-        try {
-            const res = await loader();
-            playQueue(Array.isArray(res) ? res : (res && res.Items) || []);
-        } catch (err) {
-            showToast(err.message || "Erro ao carregar.", 4000);
-        }
+    // Mix parecido / do artista: abre a lista montada e já começa a tocar.
+    function openMix(item) {
+        libraryPush({ type: "mix", item, title: "Mix: " + (item.Name || "Sem título"), autoplay: true });
     }
 
     function itemSubtitle(item) {
@@ -2017,17 +2209,16 @@
             libraryActions.append(
                 libraryButton("▶ Tocar", () => playQueue(tracks), "primary"),
                 libraryButton("🔀 Aleatório", () => playQueue(tracks, 0, { shuffle: true })),
-                libraryButton("🎲 Mix parecido", () =>
-                    playFromServer(() => J.instantMix(view.item.Id), "Montando um mix…")
-                )
+                libraryButton("🎲 Mix parecido", () => openMix(view.item))
             );
             libraryActions.hidden = false;
         } else if (view.type === "artist") {
+            libraryActions.append(libraryButton("🎲 Mix do artista", () => openMix(view.item), "primary"));
+            libraryActions.hidden = false;
+        } else if ((view.type === "mix" || (view.type === "home" && view.tab === "favorites")) && tracks.length) {
             libraryActions.append(
-                libraryButton("🎲 Mix do artista", () =>
-                    playFromServer(() => J.instantMix(view.item.Id), "Montando um mix…"),
-                    "primary"
-                )
+                libraryButton("▶ Tocar", () => playQueue(tracks), "primary"),
+                libraryButton("🔀 Aleatório", () => playQueue(tracks, 0, { shuffle: true }))
             );
             libraryActions.hidden = false;
         }
@@ -2036,8 +2227,10 @@
             const msg =
                 view.type === "search"
                     ? "Nada encontrado para essa busca."
-                    : view.type === "home"
-                      ? `Nenhum item em ${LIB_TABS[view.tab].label.toLowerCase()}.`
+                    : view.type === "home" && view.tab === "favorites"
+                      ? "Nenhuma música favorita ainda. Toque no ♡ de uma música para adicionar."
+                      : view.type === "home"
+                        ? `Nenhum item em ${LIB_TABS[view.tab].label.toLowerCase()}.`
                       : "Vazio.";
             emptyState(libraryList, msg);
             return;
@@ -2056,7 +2249,8 @@
                         subtitle: itemSubtitle(item),
                         art: view.type === "album" ? "" : J.imageUrl(item, 96),
                         placeholder: num,
-                        onClick: () => playQueue(tracks, idx)
+                        onClick: () => playQueue(tracks, idx),
+                        action: { glyph: "♡", title: "Favoritar", favId: item.Id, onClick: () => toggleFavorite(item.Id) }
                     })
                 );
                 return;
@@ -2182,18 +2376,6 @@
         server.inputMode = "url";
         const user = modalInput("text", J.userName, "", "username");
         const pass = modalInput("password", "", "", "current-password");
-        const home = modalInput("url", J.homeServer, "https://jellyfin.seudominio.com", "off");
-        home.inputMode = "url";
-
-        const adv = document.createElement("details");
-        adv.className = "modal__advanced";
-        const sum = document.createElement("summary");
-        sum.textContent = "Endereço em casa (opcional)";
-        const advHint = document.createElement("p");
-        advHint.textContent =
-            "Só se você tiver um proxy com HTTPS na rede de casa. O app tenta ele primeiro e cai pro endereço principal se não responder.";
-        adv.append(sum, advHint, modalField("Endereço em casa", home));
-        if (J.homeServer) adv.open = true;
 
         const error = document.createElement("p");
         error.className = "modal__error";
@@ -2204,7 +2386,6 @@
             modalField("Endereço do servidor", server),
             modalField("Usuário", user),
             modalField("Senha", pass),
-            adv,
             error
         );
 
@@ -2224,7 +2405,6 @@
             try {
                 await J.login({
                     server: server.value,
-                    homeServer: home.value,
                     username: user.value.trim(),
                     password: pass.value
                 });
@@ -2250,7 +2430,7 @@
                 { label: "Conectar", variant: "primary", onClick: submit }
             ]
         });
-        [server, user, pass, home].forEach((i) =>
+        [server, user, pass].forEach((i) =>
             i.addEventListener("keydown", (e) => {
                 if (e.key === "Enter") {
                     e.preventDefault();
@@ -2555,9 +2735,7 @@
             view.scroll = 0;
             renderLibraryView();
         });
-        libraryShuffleAllButton.addEventListener("click", () =>
-            playFromServer(() => window.Jellyfin.randomTracks(), "Sorteando músicas…")
-        );
+        libraryShuffleAllButton.addEventListener("click", shuffleAll);
         libraryMoreButton.addEventListener("click", loadMoreLibrary);
         queuePrevButton.addEventListener("click", queuePrev);
         queueStopButton.addEventListener("click", () => stopStream());
@@ -2721,6 +2899,12 @@
             else if (!searchScreen.hidden && settingsSheet.hidden) closeSearch();
             else if (!libraryScreen.hidden && settingsSheet.hidden && !modalRoot.children.length) history.back();
         });
+
+        trackFavButton.addEventListener("click", () => isTrack(currentStation) && toggleFavorite(currentStation.itemId));
+        carFavButton.addEventListener("click", () => isTrack(currentStation) && toggleFavorite(currentStation.itemId));
+        wireSeek(trackSeek, trackElapsed);
+        wireSeek(carSeek, carElapsed);
+        watchPlayerHeight();
 
         playerExpandButton.addEventListener("click", () => {
             const nowHidden = playerPanel.classList.toggle("hidden-section");

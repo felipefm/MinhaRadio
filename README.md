@@ -1,4 +1,4 @@
-# Rádio Player Online 📻 — v3.5
+# Rádio Player Online 📻 — v3.6
 
 No silêncio que por vezes nos cerca, a busca por uma melodia, uma voz ou uma
 notícia se faz presente. Este projeto nasce como um humilde portal para esse
@@ -52,7 +52,8 @@ Tudo local, nada vai para servidor.
 | `radioTitleColor` | cor de destaque |
 | `radioSearchFilters` | último país/tag/idioma usados |
 | `radioVolume` | último volume |
-| `radioJellyfin` | endereço(s) do Jellyfin, usuário, token da sessão e qualidade. A senha nunca é salva. |
+| `radioJellyfin` | endereço do Jellyfin, usuário, token da sessão e qualidade. A senha nunca é salva. |
+| `radioJellyfinPlayed` | ids das últimas ~400 faixas tocadas (o "tocar tudo no aleatório" evita repetir) |
 
 **IndexedDB** — banco `radioAnalyticsDB`, store `analytics`: clicks e tempo de
 escuta por estação. Alimenta "Estatísticas" e "Top mais ouvidas".
@@ -167,12 +168,19 @@ Detalhes:
 
 - **Qualidade:** "original" toca o arquivo como está (FLAC, MP3, AAC, Opus);
   "economizar dados" pede ao servidor MP3 192 kbps — útil no 4G.
-- **Endereço em casa (opcional):** se um dia houver um proxy reverso com
-  HTTPS na rede local, ele pode ser informado no "Avançado" do login; o app
-  tenta ele primeiro (2,5 s) e cai pro endereço do Tailscale se não responder.
 - **Player:** faixa tem pausa de verdade (▶/❚❚), ⏭ na barra, e ⏮/■ no painel
-  expandido. Na notificação e no Bluetooth do carro, ⏭/⏮ seguem a fila e a
-  barra de posição é arrastável. O Modo Carro também segue a fila.
+  expandido, mais barra de tempo arrastável com tempo decorrido/duração (no
+  Modo Carro também, em tamanho grande). Na notificação e no Bluetooth do
+  carro, ⏭/⏮ seguem a fila. O Modo Carro também segue a fila.
+- **Favoritas (❤):** usa o favorito do próprio Jellyfin — marcar no app
+  aparece nos outros clientes e vice-versa. ❤ no player, no Modo Carro e em
+  cada faixa das listas; a aba "❤ Favoritas" lista todas.
+- **Mix parecido / do artista:** abre a lista montada pelo servidor (o
+  InstantMix do Jellyfin) e já começa a tocar.
+- **Aleatório sem repetir:** a fila tira faixas repetidas (inclusive a mesma
+  música em álbuns diferentes, no mix e no "tocar tudo"). O "Tocar tudo no
+  aleatório" evita as ~400 últimas faixas tocadas (`radioJellyfinPlayed`) e
+  para no fim do lote.
 - **Separado das rádios:** faixas não entram em estatísticas, recentes,
   "Top mais ouvidas" nem nos presets do Modo Carro.
 - **Segurança:** o token da sessão fica no `localStorage` deste aparelho e vai
