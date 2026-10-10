@@ -1224,7 +1224,10 @@
         if (error && error.name === "NotAllowedError") {
             msg = "Toque no ▶ para iniciar o áudio.";
         } else if (isTrack(station)) {
-            msg += " Confira se o Tailscale está ligado.";
+            reportTrackError(station);
+            stopStream();
+            setPlayerState("idle");
+            return;
         } else if (station.url_resolved && station.url_resolved.startsWith("http:") && location.protocol === "https:") {
             msg += " A rádio usa HTTP e pode estar sendo bloqueada pelo navegador.";
         } else {
@@ -1233,6 +1236,21 @@
         showToast(msg, 4500);
         stopStream();
         setPlayerState("idle");
+    }
+
+    // Faixa que não tocou: se o servidor responde, o problema é o arquivo
+    // (formato ou etiquetas com defeito) — avisa qual, sem tocar outra coisa
+    // no lugar, pra que ele seja corrigido no servidor.
+    async function reportTrackError(station) {
+        const where = [station.artist, station.album].filter(Boolean).join(" — ");
+        const name = `"${station.name}"` + (where ? ` (${where})` : "");
+        const reachable = window.Jellyfin ? await window.Jellyfin.isReachable() : false;
+        showToast(
+            reachable
+                ? `${name} não tocou: o arquivo não é suportado (formato ou etiquetas com defeito). Corrija no servidor.`
+                : `${name} não tocou: não consegui falar com o servidor. O Tailscale está ligado?`,
+            7000
+        );
     }
 
     function stopStream(silent) {

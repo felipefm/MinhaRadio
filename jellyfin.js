@@ -86,6 +86,17 @@
 
     const NETWORK_MSG = "Não consegui falar com o servidor. O Tailscale está ligado?";
 
+    // Servidor responde? Separa "sem conexão" de "arquivo que não toca".
+    async function isReachable() {
+        if (!cfg.server) return false;
+        try {
+            const res = await fetch(cfg.server + "/System/Info/Public", { signal: timeoutSignal(5000) });
+            return res.ok;
+        } catch (_) {
+            return false;
+        }
+    }
+
     async function request(path, { method = "GET", params, body, token = cfg.token, server = cfg.server } = {}) {
         const base = server;
         const qs = params ? "?" + new URLSearchParams(clean(params)).toString() : "";
@@ -301,6 +312,7 @@
         setQuality,
         setFavorite,
         isFavorite,
+        isReachable,
         streamUrl,
         imageUrl,
         get quality() {
