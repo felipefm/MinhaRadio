@@ -1224,7 +1224,8 @@
         if (error && error.name === "NotAllowedError") {
             msg = "Toque no ▶ para iniciar o áudio.";
         } else if (isTrack(station)) {
-            reportTrackError(station);
+            // Lido antes do stopStream, que zera o audioPlayer.error.
+            reportTrackError(station, mediaErrorDetail(error));
             stopStream();
             setPlayerState("idle");
             return;
@@ -1241,15 +1242,27 @@
     // Faixa que não tocou: se o servidor responde, o problema é o arquivo
     // (formato ou etiquetas com defeito) — avisa qual, sem tocar outra coisa
     // no lugar, pra que ele seja corrigido no servidor.
-    async function reportTrackError(station) {
+    // Motivo técnico que o navegador dá pra recusa (ex.: "código 4:
+    // DEMUXER_ERROR_COULD_NOT_OPEN…"), pra diagnosticar o arquivo.
+    function mediaErrorDetail(error) {
+        const me = audioPlayer.error;
+        const parts = [];
+        if (me) parts.push(`código ${me.code}` + (me.message ? `: ${me.message}` : ""));
+        if (error && error.name && error.message && error.message !== "audio") parts.push(`${error.name}: ${error.message}`);
+        return parts.join(" | ");
+    }
+
+    async function reportTrackError(station, detail) {
+        if (detail) console.error("Detalhe do erro de mídia:", station.name, detail);
         const where = [station.artist, station.album].filter(Boolean).join(" — ");
         const name = `"${station.name}"` + (where ? ` (${where})` : "");
         const reachable = window.Jellyfin ? await window.Jellyfin.isReachable() : false;
         showToast(
             reachable
-                ? `${name} não tocou: o arquivo não é suportado (formato ou etiquetas com defeito). Corrija no servidor.`
+                ? `${name} não tocou: o arquivo não é suportado (formato ou etiquetas com defeito). Corrija no servidor.` +
+                  (detail ? ` Detalhe: ${detail}` : "")
                 : `${name} não tocou: não consegui falar com o servidor. O Tailscale está ligado?`,
-            7000
+            detail ? 15000 : 7000
         );
     }
 
