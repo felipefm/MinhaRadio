@@ -194,7 +194,7 @@
     }
 
     // ---------- Listagens ----------
-    const TRACK_FIELDS = "AlbumArtist,Artists,Album,AlbumId,AlbumPrimaryImageTag,RunTimeTicks";
+    const TRACK_FIELDS = "AlbumArtist,Artists,Album,AlbumId,AlbumPrimaryImageTag,RunTimeTicks,Etag";
 
     function items(params) {
         return request("/Items", {
@@ -285,6 +285,11 @@
             AudioCodec: "mp3",
             MaxStreamingBitrate: String(QUALITY_BITRATE[cfg.quality] || QUALITY_BITRATE.original)
         });
+        // Versão do item: muda quando o arquivo é trocado/reexaminado no
+        // servidor. Sem ela a URL é sempre a mesma e o cache do Chrome pode
+        // misturar pedaços do arquivo antigo com o novo (a faixa falha com
+        // "código 4" mesmo com o arquivo já corrigido).
+        if (item.Etag) params.set("v", item.Etag);
         return `${base}/Audio/${encodeURIComponent(item.Id)}/universal?${params.toString()}`;
     }
 

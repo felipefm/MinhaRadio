@@ -1252,57 +1252,17 @@
         return parts.join(" | ");
     }
 
-    // Diagnóstico: pede o começo do áudio como o <audio> pede (Range) e
-    // resume o que veio — status, tipo, tamanho total e os 4 primeiros bytes
-    // (FLAC começa com "fLaC"). Com cache "default" mostra o que o cache do
-    // navegador entrega; com "no-store", o que o servidor entrega agora.
-    async function probeStream(url, cacheMode) {
-        const ctrl = new AbortController();
-        const timer = setTimeout(() => ctrl.abort(), 10000);
-        try {
-            const res = await fetch(url, { cache: cacheMode, signal: ctrl.signal, headers: { Range: "bytes=0-" } });
-            const range = res.headers.get("Content-Range");
-            const size = (range && range.split("/")[1]) || res.headers.get("Content-Length") || "?";
-            let head = new Uint8Array(0);
-            if (res.body) {
-                const reader = res.body.getReader();
-                while (head.length < 4) {
-                    const { value, done } = await reader.read();
-                    if (done) break;
-                    const merged = new Uint8Array(head.length + value.length);
-                    merged.set(head);
-                    merged.set(value, head.length);
-                    head = merged;
-                }
-            }
-            ctrl.abort();
-            const magic = Array.from(head.slice(0, 4))
-                .map((c) => (c >= 32 && c < 127 ? String.fromCharCode(c) : "\\x" + c.toString(16).padStart(2, "0")))
-                .join("");
-            return `${res.status} ${res.headers.get("Content-Type") || "?"} ${size} bytes "${magic}"`;
-        } catch (err) {
-            return "falhou (" + (err.name === "AbortError" ? "sem resposta em 10 s" : err.message || err.name) + ")";
-        } finally {
-            clearTimeout(timer);
-        }
-    }
-
     async function reportTrackError(station, detail) {
         const where = [station.artist, station.album].filter(Boolean).join(" — ");
         const name = `"${station.name}"` + (where ? ` (${where})` : "");
         const reachable = window.Jellyfin ? await window.Jellyfin.isReachable() : false;
-        if (reachable && station.url_resolved) {
-            const cached = await probeStream(station.url_resolved, "default");
-            const fresh = await probeStream(station.url_resolved, "no-store");
-            detail = [detail, `com cache: ${cached}`, `servidor: ${fresh}`].filter(Boolean).join(" | ");
-        }
         if (detail) console.error("Detalhe do erro de mídia:", station.name, detail);
         showToast(
             reachable
                 ? `${name} não tocou: o arquivo não é suportado (formato ou etiquetas com defeito). Corrija no servidor.` +
                   (detail ? ` Detalhe: ${detail}` : "")
                 : `${name} não tocou: não consegui falar com o servidor. O Tailscale está ligado?`,
-            detail ? 20000 : 7000
+            detail ? 15000 : 7000
         );
     }
 
