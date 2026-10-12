@@ -889,6 +889,9 @@ select.input { cursor: pointer; -webkit-appearance: auto; appearance: auto; }
     .station-item { flex-wrap: wrap; }
     .station-actions { width: 100%; justify-content: flex-end; }
     .toast { bottom: calc(var(--player-space) + var(--sp-3)); }
+    /* Biblioteca: um botão só (♡ ou ▶) — cabe na mesma linha, à direita. */
+    .station-item.library-row { flex-wrap: nowrap; }
+    .library-row .station-actions { width: auto; }
 }
 
 /* ---------- Tela de busca ---------- */

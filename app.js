@@ -2138,7 +2138,7 @@
     // destaque de "tocando agora" (markPlayingItems) funcione igual.
     function buildLibraryRow({ uuid, title, subtitle, art, placeholder = "🎵", onClick, action }) {
         const item = document.createElement("div");
-        item.className = "station-item";
+        item.className = "station-item library-row";
         if (uuid) item.dataset.stationuuid = uuid;
 
         const main = document.createElement("button");
