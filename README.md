@@ -1,4 +1,4 @@
-# Rádio Player Online 📻 — v3.6
+# Rádio Player Online 📻 — v3.6.4
 
 No silêncio que por vezes nos cerca, a busca por uma melodia, uma voz ou uma
 notícia se faz presente. Este projeto nasce como um humilde portal para esse
