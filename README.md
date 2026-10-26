@@ -152,14 +152,33 @@ Configuração (uma vez só):
 1. No painel do Tailscale (admin → DNS), ligar **MagicDNS** e **HTTPS
    Certificates**.
 2. No servidor, publicar a porta do Jellyfin. Com o Tailscale num container
-   em modo `host` (app da BigBear no CasaOS):
+   em modo `host` (app da BigBear no CasaOS), a regra precisa ficar **no
+   arquivo** que o container lê ao subir (`TS_SERVE_CONFIG=/config/serve-config.json`).
+   Um `tailscale serve` feito à mão só vale até o container reiniciar: com o
+   arquivo ausente, ele sobe sem regra nenhuma. Crie a regra e grave-a no
+   arquivo:
    ```bash
    sudo docker exec big-bear-tailscale tailscale serve --bg 8096
+   F=/DATA/AppData/big-bear-tailscale/config/serve-config.json
+   sudo docker exec big-bear-tailscale tailscale serve status --json | sudo tee "$F"
+   ```
+   Para conferir que sobrevive a um reinício:
+   ```bash
+   sudo docker restart big-bear-tailscale
+   sleep 15
    sudo docker exec big-bear-tailscale tailscale serve status
    ```
-   **Ao renomear a máquina no Tailscale**, rode `tailscale serve reset` e o
-   comando acima de novo — a regra antiga fica presa ao nome antigo (sintoma:
-   "404 not found" no endereço novo).
+   Deve mostrar `https://<máquina>.<tailnet>.ts.net` → `proxy http://127.0.0.1:8096`.
+
+   **Sintoma de regra perdida:** o Jellyfin funciona na rede de casa, mas o
+   app não conecta nem toca, `serve status` diz "No serve config" e o log do
+   container (`docker logs big-bear-tailscale`) mostra
+   `could not connect to local backend server at 127.0.0.1:443`. Refaça os
+   comandos acima.
+
+   **Ao renomear a máquina no Tailscale**, rode `tailscale serve reset` e os
+   comandos acima de novo — a regra (e o arquivo) guardam o nome antigo
+   (sintoma: "404 not found" no endereço novo).
 3. No app: ⚙️ → Minha biblioteca → Conectar servidor, com o endereço `https://`
    do passo 2, usuário e senha do Jellyfin. O celular precisa estar com o
    Tailscale ligado (no Android, "VPN sempre ativa" evita esquecer).
