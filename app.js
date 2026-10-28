@@ -167,6 +167,10 @@
     let libToken = 0;
     const libHomeCache = {};
     let positionStateSet = false;
+    // Buffer da próxima faixa (ver schedulePrefetch) e a faixa que está
+    // tocando a partir da memória, pra liberar quando trocar.
+    let prefetch = null;
+    let playingBlobUrl = "";
     // ❤ do Jellyfin por id de faixa — compartilhado entre listas, player e
     // Modo Carro, pra que marcar num lugar apareça em todos.
     const favState = new Map();
@@ -1094,7 +1098,7 @@
             stopButton.disabled = queue.index >= queue.items.length - 1;
             stopButton.textContent = "⏭";
             stopButton.setAttribute("aria-label", "Próxima faixa");
-            queueStatus.textContent = queue.items.length ? `Faixa ${queue.index + 1} de ${queue.items.length}` : "";
+            refreshQueueStatus();
             return;
         }
         playButton.disabled = !currentStation || isPlaying;
@@ -1160,7 +1164,10 @@
             document.title = `▶ ${station.name} · Rádio Player`;
             if (window.RadioWakeLock) window.RadioWakeLock.request();
             markPlayingItems();
-            if (track) return;
+            if (track) {
+                schedulePrefetch();
+                return;
+            }
             if (window.radioData) window.radioData.startListeningSession(station);
             recordRecent(station);
             setTimeout(updateTopRadios, 1200);
@@ -1849,8 +1856,95 @@
     function playQueueIndex(i) {
         if (i < 0 || i >= queue.items.length) return;
         queue.index = i;
-        rememberPlayed(queue.items[i].Id);
-        playStream(trackToStation(queue.items[i]));
+        const item = queue.items[i];
+        rememberPlayed(item.Id);
+        const station = trackToStation(item);
+        // Já baixada inteira pelo buffer: toca da memória, sem depender da
+        // rede nesse momento. Senão, pede ao servidor como sempre.
+        if (prefetch && prefetch.itemId === item.Id && prefetch.blobUrl) {
+            station.url_resolved = prefetch.blobUrl;
+            clearTimeout(prefetch.timer);
+            prefetch = null;
+        } else {
+            cancelPrefetch();
+        }
+        const oldBlob = playingBlobUrl;
+        playingBlobUrl = station.url_resolved.startsWith("blob:") ? station.url_resolved : "";
+        playStream(station);
+        if (oldBlob && oldBlob !== playingBlobUrl) URL.revokeObjectURL(oldBlob);
+    }
+
+    function refreshQueueStatus() {
+        if (!queue.items.length) {
+            queueStatus.textContent = "";
+            return;
+        }
+        const next = queue.items[queue.index + 1];
+        const ready = !!next && !!prefetch && prefetch.itemId === next.Id && !!prefetch.blobUrl;
+        queueStatus.textContent = `Faixa ${queue.index + 1} de ${queue.items.length}` + (ready ? " · próxima pronta ✓" : "");
+    }
+
+    // ---------- Buffer: a próxima faixa baixada inteira ----------
+    // Enquanto uma faixa toca, a seguinte vem inteira pra memória (FLAC de
+    // 20–30 MB cabe tranquilo). Assim a troca não depende da rede naquele
+    // instante — o Tailscale às vezes oscila e uma conexão nova fica
+    // pendurada. Não passa pelo cache HTTP do Chrome (no-store). Se não
+    // ficar pronta a tempo, a troca pede ao servidor como antes; um erro de
+    // verdade continua aparecendo normalmente.
+    const PREFETCH_DELAY = 8000; // deixa a faixa atual encher o buffer dela primeiro
+    const PREFETCH_STALL = 20000; // 20 s sem receber nada: aborta e tenta de novo
+    const PREFETCH_TRIES = 3;
+
+    function cancelPrefetch() {
+        if (!prefetch) return;
+        clearTimeout(prefetch.timer);
+        if (prefetch.ctrl) prefetch.ctrl.abort();
+        if (prefetch.blobUrl && prefetch.blobUrl !== playingBlobUrl) URL.revokeObjectURL(prefetch.blobUrl);
+        prefetch = null;
+    }
+
+    function schedulePrefetch() {
+        const next = queue.items[queue.index + 1];
+        if (!next || !window.Jellyfin) {
+            cancelPrefetch();
+            return;
+        }
+        if (prefetch && prefetch.itemId === next.Id) return;
+        cancelPrefetch();
+        const p = { itemId: next.Id, ctrl: null, blobUrl: "", timer: 0 };
+        prefetch = p;
+        p.timer = setTimeout(() => downloadPrefetch(p, next, 1), PREFETCH_DELAY);
+    }
+
+    async function downloadPrefetch(p, item, attempt) {
+        if (prefetch !== p) return;
+        const ctrl = new AbortController();
+        p.ctrl = ctrl;
+        let watchdog = setTimeout(() => ctrl.abort(), PREFETCH_STALL);
+        try {
+            const res = await fetch(window.Jellyfin.streamUrl(item), { cache: "no-store", signal: ctrl.signal });
+            if (!res.ok) throw new Error("HTTP " + res.status);
+            const reader = res.body.getReader();
+            const chunks = [];
+            for (;;) {
+                const { value, done } = await reader.read();
+                if (done) break;
+                chunks.push(value);
+                clearTimeout(watchdog);
+                watchdog = setTimeout(() => ctrl.abort(), PREFETCH_STALL);
+            }
+            if (prefetch !== p) return;
+            p.ctrl = null;
+            p.blobUrl = URL.createObjectURL(new Blob(chunks, { type: res.headers.get("Content-Type") || "audio/flac" }));
+            refreshQueueStatus();
+        } catch (err) {
+            if (prefetch !== p) return; // cancelado (pulou de faixa, trocou a fila…)
+            p.ctrl = null;
+            console.warn(`Buffer: "${item.Name}" falhou (tentativa ${attempt}):`, err.name === "AbortError" ? "travou sem receber dados" : err.message);
+            if (attempt < PREFETCH_TRIES) p.timer = setTimeout(() => downloadPrefetch(p, item, attempt + 1), 5000);
+        } finally {
+            clearTimeout(watchdog);
+        }
     }
 
     // Últimas faixas tocadas — o "Tocar tudo no aleatório" evita repeti-las.
@@ -2364,6 +2458,7 @@
                 if (!ok) return;
                 if (isTrack(currentStation)) stopStream();
                 queue = { items: [], index: -1 };
+                cancelPrefetch();
                 Object.keys(libHomeCache).forEach((k) => delete libHomeCache[k]);
                 await J.logout();
                 renderJellyfinSetting();
