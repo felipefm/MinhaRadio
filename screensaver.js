@@ -3,14 +3,18 @@
    Winamp), capa, nome do que toca e relógio. O bloco de informações
    muda de lugar de tempos em tempos pra não marcar a tela.
 
-   Visualizador sincronizado (experimental, só faixas da biblioteca):
-   em vez de ligar o <audio> ao Web Audio — o que deixaria mudas as
-   rádios sem CORS e pode atrapalhar tocar com a tela desligada —, o
-   arquivo da faixa é decodificado à parte (OfflineAudioContext) e o
-   espectro é calculado aqui, no ponto em que o player está
-   (currentTime). O áudio que toca nunca passa por aqui.
+   Escolhe sozinho pelo que está tocando:
+   - faixa da biblioteca: sincronizado com a música. Em vez de ligar o
+     <audio> ao Web Audio — o que deixaria mudas as rádios sem CORS e pode
+     atrapalhar tocar com a tela desligada —, o arquivo da faixa é
+     decodificado à parte (OfflineAudioContext) e o espectro e a onda são
+     calculados aqui, no ponto em que o player está (currentTime). O áudio
+     que toca nunca passa por aqui.
+   - rádio (a página não pode ler o áudio dela): animação que não segue a
+     música, com o mesmo visual.
 
-   Rádios (ou visualizador desligado): animação que não segue a música.
+   Estilos: cada um em STYLES, recebendo os níveis já suavizados — pra
+   criar outro, é só acrescentar uma entrada (aparece nas Configurações).
 
    Expõe `window.RadioScreensaver`.
    ============================================================ */
@@ -39,7 +43,7 @@
     let driftTimer = 0;
     let clockTimer = 0;
     let enteredFullscreen = false;
-    let visualizerOn = false;
+    let style = null;
 
     const levels = new Float32Array(BARS);
     const peaks = new Float32Array(BARS);
@@ -191,7 +195,7 @@
 
     // ---------- Visualizador sincronizado ----------
     async function ensurePcm() {
-        if (!visualizerOn || !provider) return;
+        if (!provider) return;
         const i = provider.info() || {};
         const key = i.isTrack ? provider.trackKey() : "";
         if (!key || (pcm && pcm.key === key) || pcmLoadingKey === key || pcmFailedKey === key) return;
@@ -254,7 +258,62 @@
         return out;
     }
 
+    // ---------- Estilos ----------
+    // draw(c, w, h, f): c = contexto 2D já limpo; f = { levels, peaks (0..1
+    // por barra), wave (amostras da onda ou null — só no sincronizado),
+    // accent (cor de destaque), playing, synced }.
+    const STYLES = {
+        bars: {
+            label: "Barras (Winamp)",
+            draw(c, w, h, f) {
+                const n = f.levels.length;
+                const area = h * 0.45; // as barras ocupam a parte de baixo
+                const gap = Math.max(2, w * 0.006);
+                const bw = (w - gap * (n + 1)) / n;
+                const grad = c.createLinearGradient(0, h, 0, h - area);
+                grad.addColorStop(0, f.accent);
+                grad.addColorStop(1, "#f472b6");
+                for (let b = 0; b < n; b++) {
+                    const x = gap + b * (bw + gap);
+                    const bh = Math.max(2, f.levels[b] * area);
+                    c.fillStyle = grad;
+                    c.globalAlpha = 0.85;
+                    c.fillRect(x, h - bh, bw, bh);
+                    c.globalAlpha = 1;
+                    c.fillStyle = "#e2e8f0";
+                    c.fillRect(x, h - Math.max(4, f.peaks[b] * area) - 4, bw, 3);
+                }
+                // Osciloscópio (só no sincronizado: é a onda de verdade).
+                if (f.wave) {
+                    const mid = h - area - h * 0.07;
+                    const amp = h * 0.03;
+                    c.beginPath();
+                    c.strokeStyle = f.accent;
+                    c.globalAlpha = 0.6;
+                    c.lineWidth = Math.max(1, w * 0.002);
+                    const m = f.wave.length;
+                    for (let k = 0; k < m; k++) {
+                        const x = (k / (m - 1)) * w;
+                        const y = mid - f.wave[k] * amp * 2;
+                        if (k === 0) c.moveTo(x, y);
+                        else c.lineTo(x, y);
+                    }
+                    c.stroke();
+                    c.globalAlpha = 1;
+                }
+            }
+        }
+    };
+    const DEFAULT_STYLE = "bars";
+
     // ---------- Desenho ----------
+    function waveSlice(start) {
+        const n = 512;
+        const out = new Float32Array(n);
+        for (let k = 0; k < n; k++) out[k] = pcm.data[start + Math.floor((k * FFT_SIZE) / n)] || 0;
+        return out;
+    }
+
     function frame(now) {
         rafId = requestAnimationFrame(frame);
         if (!provider || !ctx2d) return;
@@ -266,28 +325,28 @@
         let target = null;
         let wave = null;
 
-        if (visualizerOn && i.isTrack) {
+        // Faixa da biblioteca: sincronizado; rádio: animação.
+        if (i.isTrack) {
             ensurePcm();
             if (pcm && pcm.key === provider.trackKey() && playing) {
                 const r = syncedLevels(provider.currentTime());
                 if (r) {
                     target = r.levels;
-                    wave = r.start;
+                    wave = waveSlice(r.start);
                 }
             }
         }
         const synced = !!target;
         if (!target) target = syntheticLevels(now / 1000, playing);
-        modeEl.textContent =
-            visualizerOn && i.isTrack
-                ? synced
-                    ? "🎚️ sincronizado com a música"
-                    : pcmLoadingKey
-                      ? "🎚️ analisando a faixa…"
-                      : pcmFailedKey && pcmFailedKey === provider.trackKey()
-                        ? "🎚️ análise indisponível — animação"
-                        : "🎚️ animação"
-                : "";
+        modeEl.textContent = !i.isTrack
+            ? ""
+            : synced
+              ? "🎚️ sincronizado com a música"
+              : pcmLoadingKey
+                ? "🎚️ analisando a faixa…"
+                : pcmFailedKey && pcmFailedKey === provider.trackKey()
+                  ? "🎚️ análise indisponível — animação"
+                  : "";
 
         // Sobe rápido, desce devagar; o "pico" segura um pouco e cai (Winamp).
         for (let b = 0; b < BARS; b++) {
@@ -307,42 +366,7 @@
         const h = canvas.height;
         ctx2d.clearRect(0, 0, w, h);
         const accent = getComputedStyle(root).getPropertyValue("--ss-accent").trim() || "#38bdf8";
-        const area = h * 0.45; // as barras ocupam a parte de baixo
-        const gap = Math.max(2, w * 0.006);
-        const bw = (w - gap * (BARS + 1)) / BARS;
-        const grad = ctx2d.createLinearGradient(0, h, 0, h - area);
-        grad.addColorStop(0, accent);
-        grad.addColorStop(1, "#f472b6");
-        for (let b = 0; b < BARS; b++) {
-            const x = gap + b * (bw + gap);
-            const bh = Math.max(2, levels[b] * area);
-            ctx2d.fillStyle = grad;
-            ctx2d.globalAlpha = 0.85;
-            ctx2d.fillRect(x, h - bh, bw, bh);
-            ctx2d.globalAlpha = 1;
-            ctx2d.fillStyle = "#e2e8f0";
-            ctx2d.fillRect(x, h - Math.max(4, peaks[b] * area) - 4, bw, 3);
-        }
-
-        // Osciloscópio (só no modo sincronizado: é a onda de verdade).
-        if (synced && wave != null) {
-            const mid = h - area - h * 0.07;
-            const amp = h * 0.03;
-            ctx2d.beginPath();
-            ctx2d.strokeStyle = accent;
-            ctx2d.globalAlpha = 0.6;
-            ctx2d.lineWidth = Math.max(1, w * 0.002);
-            const n = 512;
-            for (let k = 0; k < n; k++) {
-                const s = pcm.data[wave + Math.floor((k * FFT_SIZE) / n)] || 0;
-                const x = (k / (n - 1)) * w;
-                const y = mid - s * amp * 2;
-                if (k === 0) ctx2d.moveTo(x, y);
-                else ctx2d.lineTo(x, y);
-            }
-            ctx2d.stroke();
-            ctx2d.globalAlpha = 1;
-        }
+        style.draw(ctx2d, w, h, { levels, peaks, wave, accent, playing, synced });
     }
 
     // ---------- Abrir / fechar ----------
@@ -350,7 +374,7 @@
         if (root) return;
         provider = p;
         onClosed = opts.onClose || null;
-        visualizerOn = !!opts.visualizer;
+        style = STYLES[opts.style] || STYLES[DEFAULT_STYLE];
         build();
         resize();
         window.addEventListener("resize", resize);
@@ -399,6 +423,9 @@
     window.RadioScreensaver = {
         open,
         close,
+        // [{ id, label }] — pras Configurações.
+        styles: Object.keys(STYLES).map((id) => ({ id, label: STYLES[id].label })),
+        defaultStyle: DEFAULT_STYLE,
         get isOpen() {
             return !!root;
         }

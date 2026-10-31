@@ -125,7 +125,7 @@
         filters: "radioSearchFilters",
         volume: "radioVolume",
         played: "radioJellyfinPlayed",
-        visualizer: "radioVisualizer"
+        screensaverStyle: "radioScreensaverStyle"
     };
 
     const API_URLS = [
@@ -1789,12 +1789,13 @@
     // ============================================================
     // Descanso de tela (screensaver.js)
     // ============================================================
-    function visualizerEnabled() {
+    function screensaverStyle() {
+        const S = window.RadioScreensaver;
+        let id = "";
         try {
-            return localStorage.getItem(LS.visualizer) === "1";
-        } catch (_) {
-            return false;
-        }
+            id = localStorage.getItem(LS.screensaverStyle) || "";
+        } catch (_) {}
+        return S && S.styles.some((st) => st.id === id) ? id : S ? S.defaultStyle : "";
     }
 
     let ignoreNextPop = false;
@@ -1826,7 +1827,7 @@
             }
         };
         S.open(provider, {
-            visualizer: visualizerEnabled(),
+            style: screensaverStyle(),
             onClose: (fromHistory) => {
                 // O history.back() daqui dispara um popstate que não deve fechar
                 // o que estava por baixo (Modo Carro, biblioteca…).
@@ -1843,25 +1844,26 @@
     }
 
     function renderScreensaverSetting() {
+        const S = window.RadioScreensaver;
         screensaverSetting.innerHTML = "";
         const p = document.createElement("p");
-        p.textContent = "Abra pelo 🌌 no Modo Carro ou no painel do player (▴). Toque na tela para sair.";
+        p.textContent =
+            "Abra pelo 🌌 no Modo Carro ou no painel do player (▴). Toque na tela para sair. Nas músicas da biblioteca as barras seguem a música; nas rádios, é uma animação.";
+        screensaverSetting.appendChild(p);
+        if (!S) return;
         const chips = document.createElement("div");
         chips.className = "chips";
         chips.setAttribute("role", "group");
-        chips.setAttribute("aria-label", "Visualizador sincronizado");
-        const on = visualizerEnabled();
-        [
-            [false, "Animação"],
-            [true, "Sincronizado com a música (experimental)"]
-        ].forEach(([value, label]) => {
+        chips.setAttribute("aria-label", "Estilo do descanso de tela");
+        const current = screensaverStyle();
+        S.styles.forEach(({ id, label }) => {
             const c = document.createElement("button");
             c.type = "button";
-            c.className = "chip" + (on === value ? " is-active" : "");
+            c.className = "chip" + (current === id ? " is-active" : "");
             c.textContent = label;
             c.addEventListener("click", () => {
                 try {
-                    localStorage.setItem(LS.visualizer, value ? "1" : "0");
+                    localStorage.setItem(LS.screensaverStyle, id);
                 } catch (_) {}
                 renderScreensaverSetting();
             });
@@ -1869,8 +1871,8 @@
         });
         const hint = document.createElement("p");
         hint.textContent =
-            "Sincronizado: só nas músicas da biblioteca. O app analisa o arquivo da faixa à parte — se ela ainda não estiver na memória (buffer), baixa de novo, gastando mais dados. Nas rádios a animação não segue a música.";
-        screensaverSetting.append(p, chips, hint);
+            "Pra seguir a música, o app analisa o arquivo da faixa à parte — se ela ainda não estiver na memória (buffer), baixa de novo, gastando mais dados.";
+        screensaverSetting.append(chips, hint);
     }
 
     // ============================================================

@@ -59,7 +59,7 @@ contador anônimo de ouvintes (Worker, dá pra desligar).
 | `radioVolume` | último volume |
 | `radioJellyfin` | endereço do Jellyfin, usuário, token da sessão e qualidade. A senha nunca é salva. |
 | `radioJellyfinPlayed` | ids das últimas ~400 faixas tocadas (o "tocar tudo no aleatório" evita repetir) |
-| `radioVisualizer` | `"1"` = descanso de tela sincronizado com a música (experimental) |
+| `radioScreensaverStyle` | estilo do descanso de tela (hoje só `bars`) |
 | `radioPresenceId` | código aleatório deste aparelho no contador de ouvintes |
 | `radioPresenceOff` | `"1"` = não enviar o sinal anônimo |
 | `radioPresenceToken` | chave do painel de ouvintes (só no aparelho do dono; também o marca como "seu") |
@@ -259,18 +259,24 @@ relógio; o bloco de informações muda de lugar a cada 20 s pra não marcar a
 tela. Toque na tela (ou "voltar") pra sair. Mantém a tela ligada enquanto
 aberto.
 
-- **Animação (padrão):** as barras se mexem, mas não seguem a música.
-- **Sincronizado com a música (experimental, Configurações → Descanso de
-  tela):** só nas faixas da biblioteca. O arquivo da faixa é decodificado à
-  parte (`OfflineAudioContext`) e o espectro (FFT de 2048 pontos, 32 faixas
+O modo é escolhido sozinho pelo que está tocando:
+
+- **Música da biblioteca → sincronizado.** O arquivo da faixa é decodificado
+  à parte (`OfflineAudioContext`) e o espectro (FFT de 2048 pontos, 32 faixas
   de 40 Hz a 16 kHz) e a onda são calculados no ponto em que o player está.
   O `<audio>` que toca **não** é ligado ao Web Audio: isso deixaria mudas as
   rádios sem CORS e poderia atrapalhar tocar com a tela desligada. Custo: se
   a faixa não estiver na memória (buffer), ela é baixada de novo; a análise
   ocupa ~40 MB por faixa de 4 min (liberados ao sair). Faixas com mais de
-  15 min ficam na animação.
-- Rádios ficam sempre na animação: a maioria não manda CORS, então a página
-  não pode ler o áudio delas.
+  15 min ficam na animação. No canto aparece "analisando a faixa…" e depois
+  "sincronizado com a música".
+- **Rádio → animação.** A maioria das rádios não manda CORS, então a página
+  não pode ler o áudio delas: as barras se mexem, mas não seguem a música.
+
+**Estilos:** ficam em `STYLES`, no `screensaver.js`. Cada estilo é uma função
+`draw` que recebe os níveis já suavizados (barras e picos, 0 a 1), a onda (só
+no sincronizado) e a cor de destaque. Hoje há um, "Barras (Winamp)"; um
+estilo novo aparece sozinho em Configurações → Descanso de tela.
 
 ## Ouvintes (quem está usando o player)
 
