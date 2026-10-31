@@ -283,11 +283,11 @@ estilo novo aparece sozinho em Configurações → Descanso de tela.
 O app é público: qualquer pessoa com o link ouve as rádios (a biblioteca
 depende do seu Tailscale e login). Dois jeitos de saber se há mais gente:
 
-**1. Cloudflare Web Analytics (visitas por dia, país, aparelho).** O site já
-passa pela Cloudflare, então não precisa mexer no código: no painel da
-Cloudflare → *Analytics & Logs* → *Web Analytics* → *Add a site* →
-`radio.felipefm.com` → modo **automático** (a Cloudflare injeta o script).
-Não usa cookies.
+**1. Cloudflare Web Analytics (visitas por dia, país, aparelho).** O domínio
+não está na conta da Cloudflare, então o modo automático não serve: o
+`index.html` carrega o script da Cloudflare (`beacon.min.js`, com o token do
+site — público por natureza). Os números ficam no painel da Cloudflare →
+*Analytics & Logs* → *Web Analytics*. Não usa cookies.
 
 **2. "Ouvindo agora" no app (Configurações → 👥 Ouvintes).** Enquanto algo
 toca, o app manda a cada 2 min um sinal anônimo pro Worker
