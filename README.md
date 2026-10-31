@@ -1,4 +1,4 @@
-# Rádio Player Online 📻 — v3.6.4
+# Rádio Player Online 📻 — v3.7.0
 
 No silêncio que por vezes nos cerca, a busca por uma melodia, uma voz ou uma
 notícia se faz presente. Este projeto nasce como um humilde portal para esse
@@ -33,13 +33,18 @@ que o Service Worker não registra em `file://`.
 | `jellyfin.js` | Cliente do Jellyfin (login, listagens, URLs de áudio e capa) — `window.Jellyfin`. Fila e telas da biblioteca ficam no `app.js`. |
 | `radioData.js` | Estatísticas de uso — classe `RadioAnalytics`, isolada, grava em IndexedDB. `window.radioData`. |
 | `wakeLock.js` | Screen Wake Lock. Expõe `window.RadioWakeLock`; o `app.js` chama `request()`/`release()` ao tocar/parar. |
+| `screensaver.js` | Descanso de tela (barras estilo Winamp, capa, relógio) e o visualizador sincronizado experimental. `window.RadioScreensaver`. |
+| `presence.js` | Contador anônimo de ouvintes: manda o sinal enquanto toca e lê o painel do dono. `window.RadioPresence`. |
 | `sw.js` | Service Worker: cacheia o app shell (rede primeiro, cache como fallback offline); nunca cacheia áudio nem a API. Bump em `CACHE_NAME` a cada release. |
 | `manifest.json` | Metadados do PWA. |
 | `cloudflare-worker/nowplaying.js` | Worker opcional (deploy separado, fora do app shell) que lê o metadado ICY do stream pra mostrar capa/faixa na barra fixa e no Modo Carro. Ver seção abaixo. |
+| `cloudflare-worker/presence/` | Worker opcional do contador de ouvintes (Durable Object). Ver "Ouvintes". |
 
 ## Onde ficam os dados
 
-Tudo local, nada vai para servidor.
+Tudo local. As exceções são opcionais e descritas nas seções próprias: o
+"tocando agora" das rádios (Worker), a biblioteca (seu Jellyfin) e o
+contador anônimo de ouvintes (Worker, dá pra desligar).
 
 **`localStorage`**
 
@@ -54,6 +59,10 @@ Tudo local, nada vai para servidor.
 | `radioVolume` | último volume |
 | `radioJellyfin` | endereço do Jellyfin, usuário, token da sessão e qualidade. A senha nunca é salva. |
 | `radioJellyfinPlayed` | ids das últimas ~400 faixas tocadas (o "tocar tudo no aleatório" evita repetir) |
+| `radioVisualizer` | `"1"` = descanso de tela sincronizado com a música (experimental) |
+| `radioPresenceId` | código aleatório deste aparelho no contador de ouvintes |
+| `radioPresenceOff` | `"1"` = não enviar o sinal anônimo |
+| `radioPresenceToken` | chave do painel de ouvintes (só no aparelho do dono; também o marca como "seu") |
 
 **IndexedDB** — banco `radioAnalyticsDB`, store `analytics`: clicks e tempo de
 escuta por estação. Alimenta "Estatísticas" e "Top mais ouvidas".
@@ -207,6 +216,97 @@ Detalhes:
   servidor e pode ser revogado no Jellyfin (Painel → Dispositivos) ou com
   "Desconectar" no app.
 - O Service Worker não intercepta nada do Jellyfin (outro domínio).
+- **Buffer:** enquanto uma faixa toca, a seguinte é baixada inteira pra
+  memória (sem passar pelo cache HTTP) e a troca toca dela, sem depender da
+  rede naquele instante. Download parado por 20 s é refeito (até 3 vezes); se
+  não ficar pronta, a troca pede ao servidor como antes. O painel (▴) mostra
+  "próxima pronta ✓". A URL do áudio leva o `Etag` do item (`v=`), pra que um
+  arquivo corrigido no servidor não seja misturado com pedaços antigos no
+  cache do Chrome.
+
+### Problemas conhecidos e diagnóstico
+
+- **FLAC "não suportado" que toca convertido:** capa embutida com defeito
+  (`ffprobe` mostra `Could not read mimetype from an attached picture`). O
+  Chrome recusa o arquivo inteiro. Correção no servidor, sem reconverter o
+  áudio: `ffmpeg -i in.flac -map 0:a -c copy -map_metadata 0 out.flac`. O app
+  não contorna isso de propósito — mostra o erro com o detalhe do navegador
+  pra que o arquivo seja corrigido.
+- **Músicas travando na troca (em observação):** em 26/10 e 31/10 a faixa
+  seguinte não começava no Wi-Fi de casa; trocando pro 5G voltou ao normal, e
+  depois o Wi-Fi também. Nos logs do Tailscale (horário em UTC, 3 h à frente
+  de Brasília), o mesmo período mostra a conexão alternando a cada 1–2 min
+  entre IPv4 da rede local e IPv6 (`now using …`) e linhas
+  `derp-11 does not know about peer`. Hipóteses: troca automática de banda
+  2,4/5 GHz do modem e o modo `TS_USERSPACE=true` do container, que lida mal
+  com essas trocas. O buffer da próxima faixa (acima) reduz o efeito; ainda
+  não há proteção pra uma queda no meio da faixa atual. No momento do
+  travamento, rodar:
+  ```bash
+  sudo docker exec big-bear-tailscale tailscale status
+  sudo docker logs --since 5m big-bear-tailscale 2>&1 | grep -iE "proxy|timed out|error|derp|now using"
+  ```
+  `relay` em vez de `direct`, ou muitas linhas `now using`/`derp`, confirmam
+  que é a conexão. Próximos passos possíveis, se continuar: detector de
+  travamento com reconexão visível na faixa atual, buffer de 2 faixas, e
+  tirar o modo `userspace` do Tailscale no servidor.
+
+## Descanso de tela
+
+Botão 🌌 no Modo Carro e no painel do player (▴). Tela cheia preta com barras
+estilo Winamp (com "picos" que caem devagar), capa, nome do que toca e
+relógio; o bloco de informações muda de lugar a cada 20 s pra não marcar a
+tela. Toque na tela (ou "voltar") pra sair. Mantém a tela ligada enquanto
+aberto.
+
+- **Animação (padrão):** as barras se mexem, mas não seguem a música.
+- **Sincronizado com a música (experimental, Configurações → Descanso de
+  tela):** só nas faixas da biblioteca. O arquivo da faixa é decodificado à
+  parte (`OfflineAudioContext`) e o espectro (FFT de 2048 pontos, 32 faixas
+  de 40 Hz a 16 kHz) e a onda são calculados no ponto em que o player está.
+  O `<audio>` que toca **não** é ligado ao Web Audio: isso deixaria mudas as
+  rádios sem CORS e poderia atrapalhar tocar com a tela desligada. Custo: se
+  a faixa não estiver na memória (buffer), ela é baixada de novo; a análise
+  ocupa ~40 MB por faixa de 4 min (liberados ao sair). Faixas com mais de
+  15 min ficam na animação.
+- Rádios ficam sempre na animação: a maioria não manda CORS, então a página
+  não pode ler o áudio delas.
+
+## Ouvintes (quem está usando o player)
+
+O app é público: qualquer pessoa com o link ouve as rádios (a biblioteca
+depende do seu Tailscale e login). Dois jeitos de saber se há mais gente:
+
+**1. Cloudflare Web Analytics (visitas por dia, país, aparelho).** O site já
+passa pela Cloudflare, então não precisa mexer no código: no painel da
+Cloudflare → *Analytics & Logs* → *Web Analytics* → *Add a site* →
+`radio.felipefm.com` → modo **automático** (a Cloudflare injeta o script).
+Não usa cookies.
+
+**2. "Ouvindo agora" no app (Configurações → 👥 Ouvintes).** Enquanto algo
+toca, o app manda a cada 2 min um sinal anônimo pro Worker
+`cloudflare-worker/presence`: um código aleatório do aparelho, o nome da
+rádio (faixas da biblioteca aparecem só como "Minha biblioteca"), o tipo de
+aparelho e se é um aparelho do dono. A Cloudflare acrescenta país e cidade
+aproximados. Ao parar ou fechar, o app avisa que saiu; sem sinal por 5 min, o
+aparelho some da lista. Por dia, o Worker guarda só os códigos dos aparelhos
+que usaram (60 dias), pra contagem. O aviso aparece nas Configurações e dá pra
+desligar o envio ali.
+
+Só quem tem a **chave do painel** vê a lista (quem está ouvindo, de onde e há
+quanto tempo, e aparelhos por dia). Ter a chave no aparelho também o marca
+como "seu" na contagem.
+
+Deploy do Worker (uma vez só, na pasta `cloudflare-worker/presence`):
+```bash
+npx wrangler login
+npx wrangler deploy
+npx wrangler secret put READ_TOKEN   # invente uma chave longa
+```
+Depois: cole a URL do Worker em `PRESENCE_WORKER_URL` no topo do `app.js`,
+publique, e no app vá em ⚙️ → 👥 Ouvintes → "Tenho a chave do painel". Com a
+URL em branco, o app não manda nada e a seção diz que não está configurado.
+Usa Durable Object com SQLite, disponível no plano gratuito.
 
 ## Licença
 
@@ -216,6 +316,6 @@ compartilhar e adaptar, com atribuição e para uso não comercial.
 ## Ideias para próximas versões
 
 - Playlists do Jellyfin como presets do Modo Carro
-- Reconexão automática do stream em quedas de conexão
+- Reconexão automática do stream em quedas de conexão (rádios e faixa atual da biblioteca)
 - Agregador de podcasts
 - Sincronização opcional de estatísticas entre dispositivos

@@ -596,6 +596,7 @@ select.input { cursor: pointer; -webkit-appearance: auto; appearance: auto; }
     transition: background-color 0.15s ease, border-color 0.15s ease;
 }
 .top-radio-btn:hover { background: var(--accent-soft); border-color: var(--accent); }
+.top-radio-btn.is-active { background: var(--accent-soft); border-color: var(--accent); color: var(--accent); }
 .top-radios .empty-state { flex: 1; }
 
 /* ---------- Install CTA ---------- */
@@ -994,6 +995,7 @@ select.input { cursor: pointer; -webkit-appearance: auto; appearance: auto; }
     cursor: pointer;
 }
 .car-mode__exit:active { transform: scale(0.94); }
+.car-mode__top-actions { display: flex; gap: var(--sp-2); }
 
 .car-mode__hero { padding: 0 var(--sp-5); text-align: center; flex-shrink: 0; }
 .car-mode__art {
@@ -1280,6 +1282,66 @@ select.input { cursor: pointer; -webkit-appearance: auto; appearance: auto; }
 }
 .modal__body .modal__field .input { margin-top: 0; }
 .modal__error { margin: var(--sp-3) 0 0; color: var(--danger); font-weight: 600; }
+
+/* ---------- Descanso de tela (screensaver.js) ---------- */
+.screensaver {
+    position: fixed;
+    inset: 0;
+    z-index: 95;
+    background: #000;
+    color: #e2e8f0;
+    cursor: none;
+    --ss-accent: var(--accent);
+    animation: fade 0.3s ease;
+}
+.screensaver__canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+.screensaver__info {
+    position: absolute;
+    left: 10%;
+    top: 15%;
+    max-width: min(80%, 520px);
+    display: flex;
+    align-items: center;
+    gap: var(--sp-4);
+    transition: left 2.5s ease, top 2.5s ease;
+}
+.screensaver__art {
+    width: 88px;
+    height: 88px;
+    border-radius: var(--r);
+    object-fit: cover;
+    flex-shrink: 0;
+    opacity: 0.9;
+}
+.screensaver__text { min-width: 0; }
+.screensaver__title {
+    font-size: clamp(1.1rem, 5vw, 1.6rem);
+    font-weight: 700;
+    overflow: hidden;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+}
+.screensaver__sub { font-size: var(--fs-sm); color: #94a3b8; margin-top: 2px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.screensaver__clock { font-size: clamp(1.6rem, 9vw, 2.6rem); font-weight: 300; font-variant-numeric: tabular-nums; margin-top: var(--sp-2); color: #cbd5e1; }
+.screensaver__mode { position: absolute; right: 12px; top: calc(10px + env(safe-area-inset-top)); font-size: 0.7rem; color: #64748b; }
+.screensaver__hint {
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    transform: translate(-50%, -50%);
+    padding: 8px 16px;
+    border-radius: var(--r-pill);
+    background: rgba(255, 255, 255, 0.12);
+    font-size: var(--fs-sm);
+    transition: opacity 0.8s ease;
+}
+.screensaver__hint.is-hidden { opacity: 0; }
+.player__row--tools { justify-content: flex-start; }
+.presence-box { display: flex; flex-direction: column; gap: var(--sp-2); font-size: var(--fs-sm); }
+.presence-box:empty { display: none; }
+.presence-list { margin: 0; padding-left: 1.2em; color: var(--text-muted); }
+.presence-list li { margin: 2px 0; }
 
 /* ---------- Reduzir movimento ---------- */
 @media (prefers-reduced-motion: reduce) {

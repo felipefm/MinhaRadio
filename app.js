@@ -98,6 +98,10 @@
     const libraryList = $("libraryList");
     const libraryMoreButton = $("libraryMoreButton");
     const jellyfinSetting = $("jellyfinSetting");
+    const screensaverSetting = $("screensaverSetting");
+    const presenceSetting = $("presenceSetting");
+    const screensaverButton = $("screensaverButton");
+    const carScreensaverButton = $("carScreensaverButton");
     const queueRow = $("queueRow");
     const queuePrevButton = $("queuePrevButton");
     const queueStopButton = $("queueStopButton");
@@ -120,7 +124,8 @@
         recents: "radioRecents",
         filters: "radioSearchFilters",
         volume: "radioVolume",
-        played: "radioJellyfinPlayed"
+        played: "radioJellyfinPlayed",
+        visualizer: "radioVisualizer"
     };
 
     const API_URLS = [
@@ -133,6 +138,10 @@
     // URL do Worker de "tocando agora" (cloudflare-worker/nowplaying.js).
     // Deixe em branco para desativar a exibição de capa/faixa no Modo Carro.
     const NOWPLAYING_WORKER_URL = "https://radio-nowplaying.felipefm-suporte.workers.dev/";
+
+    // URL do Worker do contador de ouvintes (cloudflare-worker/presence).
+    // Em branco: o app não manda sinal nenhum e a seção some.
+    const PRESENCE_WORKER_URL = "";
 
     let favorites = {};
     let categoryOrder = [];
@@ -1058,6 +1067,7 @@
     function setPlayerState(state) {
         playerBar.dataset.state = state;
         setMediaPlaybackState(state);
+        if (window.RadioPresence) window.RadioPresence.notify();
 
         if (isTrack(currentStation)) {
             // Faixa da biblioteca: capa e nomes já vêm do Jellyfin, sem
@@ -1113,6 +1123,10 @@
         const uuid = currentStation && playerBar.dataset.state !== "idle" ? currentStation.stationuuid : null;
         document.querySelectorAll(".station-item").forEach((item) => {
             item.classList.toggle("is-playing", !!uuid && item.dataset.stationuuid === uuid);
+        });
+        // Top Rádios: destaca a que está tocando, como o preset do Modo Carro.
+        document.querySelectorAll(".top-radio-btn").forEach((b) => {
+            b.classList.toggle("is-active", !!uuid && b.dataset.stationuuid === uuid);
         });
     }
 
@@ -1772,6 +1786,252 @@
 
     // Telas sobrepostas (busca, Modo Carro) entram no histórico, pra que o
     // "voltar" do Android feche a tela em vez de sair do app.
+    // ============================================================
+    // Descanso de tela (screensaver.js)
+    // ============================================================
+    function visualizerEnabled() {
+        try {
+            return localStorage.getItem(LS.visualizer) === "1";
+        } catch (_) {
+            return false;
+        }
+    }
+
+    let ignoreNextPop = false;
+
+    function openScreensaver() {
+        const S = window.RadioScreensaver;
+        if (!S || S.isOpen) return;
+        const provider = {
+            info() {
+                const st = currentStation;
+                const radioTrack = carTrackInfo && !carTrackInfo.hidden ? carTrackInfo.textContent : "";
+                return {
+                    title: st ? st.name : "Nada tocando",
+                    subtitle: st ? radioTrack || playerSubtitle(st) : "",
+                    art: nowPlayingArt && !nowPlayingArt.hidden ? nowPlayingArt.src : "",
+                    isTrack: isTrack(st),
+                    playing: playerBar.dataset.state === "playing"
+                };
+            },
+            trackKey: () => (isTrack(currentStation) ? currentStation.itemId : ""),
+            currentTime: () => audioPlayer.currentTime || 0,
+            // Arquivo da faixa pra análise: da memória (buffer) ou do servidor.
+            async audioData() {
+                if (!isTrack(currentStation)) return null;
+                const url = currentStation.url_resolved;
+                const res = await fetch(url, url.startsWith("blob:") ? {} : { cache: "no-store" });
+                if (!res.ok) throw new Error("HTTP " + res.status);
+                return res.arrayBuffer();
+            }
+        };
+        S.open(provider, {
+            visualizer: visualizerEnabled(),
+            onClose: (fromHistory) => {
+                // O history.back() daqui dispara um popstate que não deve fechar
+                // o que estava por baixo (Modo Carro, biblioteca…).
+                if (!fromHistory && history.state && history.state.overlay === "screensaver") {
+                    ignoreNextPop = true;
+                    history.back();
+                }
+                const st = playerBar.dataset.state;
+                if (window.RadioWakeLock && st !== "playing" && st !== "loading") window.RadioWakeLock.release();
+            }
+        });
+        pushOverlayState("screensaver");
+        if (window.RadioWakeLock) window.RadioWakeLock.request();
+    }
+
+    function renderScreensaverSetting() {
+        screensaverSetting.innerHTML = "";
+        const p = document.createElement("p");
+        p.textContent = "Abra pelo 🌌 no Modo Carro ou no painel do player (▴). Toque na tela para sair.";
+        const chips = document.createElement("div");
+        chips.className = "chips";
+        chips.setAttribute("role", "group");
+        chips.setAttribute("aria-label", "Visualizador sincronizado");
+        const on = visualizerEnabled();
+        [
+            [false, "Animação"],
+            [true, "Sincronizado com a música (experimental)"]
+        ].forEach(([value, label]) => {
+            const c = document.createElement("button");
+            c.type = "button";
+            c.className = "chip" + (on === value ? " is-active" : "");
+            c.textContent = label;
+            c.addEventListener("click", () => {
+                try {
+                    localStorage.setItem(LS.visualizer, value ? "1" : "0");
+                } catch (_) {}
+                renderScreensaverSetting();
+            });
+            chips.appendChild(c);
+        });
+        const hint = document.createElement("p");
+        hint.textContent =
+            "Sincronizado: só nas músicas da biblioteca. O app analisa o arquivo da faixa à parte — se ela ainda não estiver na memória (buffer), baixa de novo, gastando mais dados. Nas rádios a animação não segue a música.";
+        screensaverSetting.append(p, chips, hint);
+    }
+
+    // ============================================================
+    // Ouvintes (presence.js) — contador anônimo
+    // ============================================================
+    function initPresence() {
+        if (!window.RadioPresence) return;
+        window.RadioPresence.init({
+            url: PRESENCE_WORKER_URL,
+            getState: () => {
+                const st = currentStation;
+                if (!st) return { playing: false };
+                return {
+                    playing: playerBar.dataset.state === "playing",
+                    label: isTrack(st) ? "Minha biblioteca" : st.name || "Rádio",
+                    kind: isTrack(st) ? "track" : "radio"
+                };
+            }
+        });
+    }
+
+    function timeAgo(ms) {
+        const min = Math.max(0, Math.round(ms / 60000));
+        if (min < 1) return "agora";
+        if (min < 60) return `há ${min} min`;
+        const h = Math.floor(min / 60);
+        return `há ${h} h ${String(min % 60).padStart(2, "0")} min`;
+    }
+
+    async function showPresenceStatus(box) {
+        box.innerHTML = "";
+        emptyState(box, "Carregando…");
+        try {
+            const data = await window.RadioPresence.status();
+            box.innerHTML = "";
+            const now = data.now || Date.now();
+            const h = document.createElement("strong");
+            const others = data.listening.filter((l) => !l.mine).length;
+            h.textContent = `Ouvindo agora: ${data.listening.length}` + (data.listening.length ? ` (${others} de outras pessoas)` : "");
+            box.appendChild(h);
+            const ul = document.createElement("ul");
+            ul.className = "presence-list";
+            data.listening.forEach((l) => {
+                const li = document.createElement("li");
+                const where = [l.city, l.country].filter(Boolean).join(", ");
+                li.textContent =
+                    `${l.kind === "track" ? "🎵" : "📻"} ${l.label} — ${[l.device, where].filter(Boolean).join(" · ")}` +
+                    ` · ${timeAgo(now - l.since)}` +
+                    (l.mine ? " (seu)" : "");
+                ul.appendChild(li);
+            });
+            box.appendChild(ul);
+            const used = (data.days || []).filter((d) => d.total);
+            const h2 = document.createElement("strong");
+            h2.textContent = "Aparelhos por dia (últimos 14)";
+            box.appendChild(h2);
+            if (!used.length) {
+                const p = document.createElement("p");
+                p.textContent = "Nenhum uso registrado ainda.";
+                box.appendChild(p);
+            } else {
+                const ul2 = document.createElement("ul");
+                ul2.className = "presence-list";
+                used.forEach((d) => {
+                    const li = document.createElement("li");
+                    const [y, m, dd] = d.day.split("-");
+                    const others = d.total - d.mine;
+                    li.textContent = `${dd}/${m}/${y}: ${d.total} aparelho(s) — ${d.mine} seu(s), ${others} de outras pessoas`;
+                    ul2.appendChild(li);
+                });
+                box.appendChild(ul2);
+            }
+        } catch (err) {
+            emptyState(box, err.message || "Não foi possível carregar.");
+        }
+    }
+
+    function askPresenceToken() {
+        const wrap = document.createElement("div");
+        const intro = document.createElement("p");
+        intro.style.margin = "0";
+        intro.textContent =
+            "A chave do painel é a READ_TOKEN que você definiu no Worker. Com ela, este aparelho mostra quem está ouvindo e passa a contar como seu.";
+        const input = modalInput("password", "", "", "off");
+        wrap.append(intro, modalField("Chave do painel", input));
+        const modal = buildModal({
+            title: "Painel de ouvintes",
+            body: wrap,
+            actions: [
+                { label: "Cancelar", variant: "ghost", value: null },
+                {
+                    label: "Salvar",
+                    variant: "primary",
+                    onClick: (close) => {
+                        if (!input.value.trim()) return;
+                        window.RadioPresence.setToken(input.value);
+                        close("__done__");
+                        renderPresenceSetting();
+                    }
+                }
+            ]
+        });
+        input.addEventListener("keydown", (e) => {
+            if (e.key === "Enter") modal.actionsEl.lastElementChild.click();
+        });
+        setTimeout(() => input.focus(), 40);
+    }
+
+    function renderPresenceSetting() {
+        const P = window.RadioPresence;
+        presenceSetting.innerHTML = "";
+        const p = document.createElement("p");
+        if (!P || !P.configured) {
+            p.textContent = "Contador de ouvintes não configurado neste app (ver README).";
+            presenceSetting.appendChild(p);
+            return;
+        }
+        p.textContent =
+            "Enquanto toca, o app manda a cada 2 minutos um sinal anônimo pra contar quantas pessoas estão ouvindo: um código aleatório deste aparelho, o nome da rádio (nas músicas da biblioteca, só \"Minha biblioteca\") e o tipo de aparelho. A Cloudflare acrescenta país e cidade aproximados. Nada de nome, e-mail ou IP guardado.";
+        const chips = document.createElement("div");
+        chips.className = "chips";
+        chips.setAttribute("role", "group");
+        chips.setAttribute("aria-label", "Sinal anônimo");
+        [
+            [true, "Enviar sinal"],
+            [false, "Não enviar"]
+        ].forEach(([value, label]) => {
+            const c = document.createElement("button");
+            c.type = "button";
+            c.className = "chip" + (P.enabled === value ? " is-active" : "");
+            c.textContent = label;
+            c.addEventListener("click", () => {
+                P.setEnabled(value);
+                renderPresenceSetting();
+            });
+            chips.appendChild(c);
+        });
+        presenceSetting.append(p, chips);
+
+        if (!P.hasToken) {
+            presenceSetting.appendChild(libraryButton("Tenho a chave do painel", askPresenceToken, "ghost"));
+            return;
+        }
+        const box = document.createElement("div");
+        box.className = "presence-box";
+        const row = document.createElement("div");
+        row.className = "chips";
+        row.append(
+            libraryButton("👥 Ver quem está ouvindo", () => showPresenceStatus(box), "ghost"),
+            libraryButton(
+                "Remover chave",
+                () => {
+                    P.setToken("");
+                    renderPresenceSetting();
+                },
+                "ghost"
+            )
+        );
+        presenceSetting.append(row, box);
+    }
+
     function pushOverlayState(name) {
         try {
             history.pushState({ overlay: name }, "");
@@ -2735,6 +2995,7 @@
                 const b = document.createElement("button");
                 b.type = "button";
                 b.className = "top-radio-btn";
+                b.dataset.stationuuid = r.stationId;
                 b.textContent = `${i + 1}. ${r.name.length > 22 ? r.name.slice(0, 22) + "…" : r.name}`;
                 b.title = `${r.name} · ${window.radioData.formatTime(r.totalTime || 0)}`;
                 b.addEventListener("click", () =>
@@ -2750,6 +3011,7 @@
                 );
                 topRadiosButtons.appendChild(b);
             });
+            markPlayingItems();
         } catch (_) {
             emptyState(topRadiosButtons, "Erro ao carregar.");
         }
@@ -2837,6 +3099,14 @@
         searchCloseButton.addEventListener("click", () => closeSearch());
         window.addEventListener("popstate", (e) => {
             const st = e.state;
+            if (ignoreNextPop) {
+                ignoreNextPop = false;
+                return;
+            }
+            if (window.RadioScreensaver && window.RadioScreensaver.isOpen) {
+                window.RadioScreensaver.close(true);
+                return;
+            }
             if (!libraryScreen.hidden && st && st.overlay === "library") {
                 libraryGoTo(st.depth);
                 return;
@@ -3004,6 +3274,11 @@
         // Modo Carro
         carModeButton.addEventListener("click", enterCarMode);
         carExitButton.addEventListener("click", () => exitCarMode());
+        carScreensaverButton.addEventListener("click", (e) => {
+            e.stopPropagation();
+            openScreensaver();
+        });
+        screensaverButton.addEventListener("click", openScreensaver);
         carModeScreen.addEventListener("click", requestCarFullscreen);
         carPlayButton.addEventListener("click", () => {
             if (isTrack(currentStation)) {
@@ -3021,7 +3296,8 @@
         });
         document.addEventListener("keydown", (e) => {
             if (e.key !== "Escape") return;
-            if (carModeScreen && !carModeScreen.hidden) exitCarMode();
+            if (window.RadioScreensaver && window.RadioScreensaver.isOpen) window.RadioScreensaver.close();
+            else if (carModeScreen && !carModeScreen.hidden) exitCarMode();
             else if (!searchScreen.hidden && settingsSheet.hidden) closeSearch();
             else if (!libraryScreen.hidden && settingsSheet.hidden && !modalRoot.children.length) history.back();
         });
@@ -3206,6 +3482,9 @@
         wireEvents();
         wireMediaSession();
         renderJellyfinSetting();
+        renderScreensaverSetting();
+        initPresence();
+        renderPresenceSetting();
         renderFavorites();
         renderRecents();
         updateVolumeUI();

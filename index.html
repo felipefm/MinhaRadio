@@ -229,6 +229,9 @@
                 <button id="volumeUp" class="icon-btn" type="button" title="Aumentar volume" aria-label="Aumentar volume">+</button>
                 <span id="volumeDisplay" class="player__vol">100%</span>
             </div>
+            <div class="player__row player__row--tools">
+                <button id="screensaverButton" class="btn btn--ghost btn--sm" type="button">🌌 Descanso de tela</button>
+            </div>
             <div class="player__row player__row--sleep">
                 <span class="player__row-label" aria-hidden="true">⏱️ Desligar em</span>
                 <div class="chips" id="sleepChips" role="group" aria-label="Sleep timer">
@@ -269,7 +272,10 @@
         <div class="car-mode__top">
             <span class="car-mode__clock" id="carClock">--:--</span>
             <span class="car-mode__status"><span class="car-mode__dot" aria-hidden="true"></span><span id="carStatusLabel">Parado</span></span>
-            <button id="carExitButton" class="car-mode__exit" type="button" aria-label="Sair do Modo Carro">✕</button>
+            <span class="car-mode__top-actions">
+                <button id="carScreensaverButton" class="car-mode__exit" type="button" aria-label="Descanso de tela">🌌</button>
+                <button id="carExitButton" class="car-mode__exit" type="button" aria-label="Sair do Modo Carro">✕</button>
+            </span>
         </div>
 
         <div class="car-mode__hero">
@@ -328,10 +334,18 @@
                     <span class="setting__label">🎵 Minha biblioteca (Jellyfin)</span>
                     <div id="jellyfinSetting" class="jellyfin-setting"></div>
                 </div>
+                <div class="setting">
+                    <span class="setting__label">🌌 Descanso de tela</span>
+                    <div id="screensaverSetting" class="jellyfin-setting"></div>
+                </div>
+                <div class="setting">
+                    <span class="setting__label">👥 Ouvintes</span>
+                    <div id="presenceSetting" class="jellyfin-setting"></div>
+                </div>
                 <details class="setting setting--about">
                     <summary>Sobre o projeto</summary>
                     <div class="about-content">
-                        <h3>📻 Rádio Player Online <span class="about-version">v3.6.4</span></h3>
+                        <h3>📻 Rádio Player Online <span class="about-version">v3.7.0</span></h3>
                         <p>Um player de rádio web para descobrir, tocar e organizar estações de rádio de todo o mundo. Funciona offline como app instalável (PWA).</p>
                         <h4>Recursos</h4>
                         <ul>
@@ -343,6 +357,8 @@
                             <li>🎨 Capa e faixa tocando, na barra fixa e no Modo Carro (opcional)</li>
                             <li>🎵 Minha biblioteca: toca as músicas do seu servidor Jellyfin (playlists, álbuns, artistas, aleatório e mix)</li>
                             <li>⏱️ Sleep timer com fade-out</li>
+                            <li>🌌 Descanso de tela com barras estilo Winamp (sincronizadas com as músicas da biblioteca, opcional)</li>
+                            <li>👥 Contador anônimo de ouvintes (dá pra desligar nas Configurações)</li>
                             <li>🎵 Streams HLS e formatos tradicionais</li>
                             <li>🌙 Tema claro/escuro e cores personalizáveis</li>
                             <li>📊 Estatísticas de uso locais (IndexedDB)</li>
@@ -362,6 +378,8 @@
     <div id="modalRoot"></div>
 
     <script src="wakeLock.js" defer></script>
+    <script src="screensaver.js" defer></script>
+    <script src="presence.js" defer></script>
     <script src="jellyfin.js" defer></script>
     <script src="app.js" defer></script>
 </body>
