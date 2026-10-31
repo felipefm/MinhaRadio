@@ -141,7 +141,7 @@
 
     // URL do Worker do contador de ouvintes (cloudflare-worker/presence).
     // Em branco: o app não manda sinal nenhum e a seção some.
-    const PRESENCE_WORKER_URL = "";
+    const PRESENCE_WORKER_URL = "https://radio-presence.felipefm-suporte.workers.dev";
 
     let favorites = {};
     let categoryOrder = [];
