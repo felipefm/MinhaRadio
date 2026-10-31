@@ -312,7 +312,9 @@ npx wrangler secret put READ_TOKEN   # invente uma chave longa
 Depois: cole a URL do Worker em `PRESENCE_WORKER_URL` no topo do `app.js`,
 publique, e no app vá em ⚙️ → 👥 Ouvintes → "Tenho a chave do painel". Com a
 URL em branco, o app não manda nada e a seção diz que não está configurado.
-Usa Durable Object com SQLite, disponível no plano gratuito.
+Usa Durable Object com SQLite, disponível no plano gratuito. Tudo fica no
+armazenamento do objeto (não só na memória): a Cloudflare o tira da memória
+quando fica parado entre os sinais de 2 min.
 
 ## Licença
 

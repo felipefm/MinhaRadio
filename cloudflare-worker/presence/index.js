@@ -5,9 +5,11 @@
    responde ao painel do dono com quem está ouvindo agora e quantos
    aparelhos usaram o player por dia.
 
-   Estado num Durable Object só ("global"):
-   - ouvindo agora: em memória, some 5 min depois do último sinal;
-   - aparelhos por dia: guardado (ids aleatórios + "é do dono"), 60 dias.
+   Estado num Durable Object só ("global"), tudo no armazenamento dele —
+   a Cloudflare tira o objeto da memória quando fica parado (entre um
+   sinal e outro, de 2 min), então nada pode depender só da memória:
+   - ouvindo agora: chave "s:<id>", some 5 min depois do último sinal;
+   - aparelhos por dia: "day:<data>" (ids aleatórios + "é do dono"), 60 dias.
 
    Rotas:
    POST /ping    { id, label, kind, device, mine }   (só do app)
@@ -95,12 +97,20 @@ export default {
 export class Presence {
     constructor(ctx) {
         this.ctx = ctx;
-        this.sessions = new Map();
         this.day = null; // { key, ids: { id: mine } } — cache do dia atual
     }
 
-    prune(now) {
-        for (const [id, s] of this.sessions) if (now - s.lastSeen > ACTIVE_MS) this.sessions.delete(id);
+    // Sessões ativas (lidas do armazenamento); apaga as vencidas.
+    async activeSessions(now) {
+        const all = await this.ctx.storage.list({ prefix: "s:" });
+        const active = [];
+        const stale = [];
+        for (const [key, s] of all) {
+            if (now - s.lastSeen > ACTIVE_MS) stale.push(key);
+            else active.push(s);
+        }
+        if (stale.length) await this.ctx.storage.delete(stale);
+        return active;
     }
 
     async countDay(id, mine, now) {
@@ -126,17 +136,19 @@ export class Presence {
     async fetch(request) {
         const url = new URL(request.url);
         const now = Date.now();
-        this.prune(now);
 
         if (url.pathname === "/event") {
             const e = await request.json();
+            const key = "s:" + e.id;
             if (e.op === "bye") {
-                this.sessions.delete(e.id);
+                await this.ctx.storage.delete(key);
                 return new Response(null, { status: 204 });
             }
-            const prev = this.sessions.get(e.id);
-            if (!prev && this.sessions.size >= MAX_SESSIONS) return new Response(null, { status: 204 });
-            this.sessions.set(e.id, {
+            const prev = await this.ctx.storage.get(key);
+            if (!prev && (await this.activeSessions(now)).length >= MAX_SESSIONS) {
+                return new Response(null, { status: 204 });
+            }
+            await this.ctx.storage.put(key, {
                 id: e.id,
                 label: e.label,
                 kind: e.kind,
@@ -152,7 +164,7 @@ export class Presence {
         }
 
         if (url.pathname === "/status") {
-            const listening = [...this.sessions.values()]
+            const listening = (await this.activeSessions(now))
                 .sort((a, b) => Number(a.mine) - Number(b.mine) || b.lastSeen - a.lastSeen)
                 .map((s) => ({ ...s, id: s.id.slice(-6) }));
             const keys = [];
