@@ -13,8 +13,9 @@
    - rádio (a página não pode ler o áudio dela): animação que não segue a
      música, com o mesmo visual.
 
-   Exceção: o estilo "Suave" não segue a música — só relógio, o que toca
-   e um fundo calmo (bom pra deixar ligado no trabalho).
+   Exceção: o estilo "Suave" não segue a música — só relógio, capa, o que
+   toca e um fundo calmo nas cores da capa (bom pra deixar ligado no
+   trabalho).
 
    Estilos: cada um em STYLES, recebendo os níveis já suavizados — pra
    criar outro, é só acrescentar uma entrada (aparece nas Configurações).
@@ -54,6 +55,11 @@
     const peakHold = new Float32Array(BARS);
     let lastFrame = 0;
     let lastDraw = 0;
+    // Cores do fundo do "Suave": as da capa (palTarget) e as que estão na
+    // tela (palCurrent), que andam devagar até elas.
+    let palKey = "";
+    let palTarget = null;
+    let palCurrent = null;
     let reduceMotion = false;
 
     // Análise da faixa atual (modo sincronizado).
@@ -272,7 +278,7 @@
     // Cor CSS qualquer (a de destaque vem do tema) com outra opacidade —
     // o canvas devolve a cor normalizada em #rrggbb.
     const rgbaCache = {};
-    function withAlpha(c, color, a) {
+    function toRgb(c, color) {
         if (!rgbaCache[color]) {
             c.fillStyle = "#000";
             c.fillStyle = color;
@@ -284,8 +290,118 @@
             else if (n) rgbaCache[color] = [+n[1], +n[2], +n[3]];
             else throw new Error("Descanso de tela: cor inválida — " + color);
         }
-        const [r, g, b] = rgbaCache[color];
-        return `rgba(${r},${g},${b},${a})`;
+        return rgbaCache[color];
+    }
+
+    function rgba([r, g, b], a) {
+        return `rgba(${Math.round(r)},${Math.round(g)},${Math.round(b)},${a})`;
+    }
+
+    function mixRgb(a, b, k) {
+        return [a[0] + (b[0] - a[0]) * k, a[1] + (b[1] - a[1]) * k, a[2] + (b[2] - a[2]) * k];
+    }
+
+    function rgbToHsl(r, g, b) {
+        r /= 255;
+        g /= 255;
+        b /= 255;
+        const max = Math.max(r, g, b);
+        const min = Math.min(r, g, b);
+        const l = (max + min) / 2;
+        if (max === min) return [0, 0, l];
+        const d = max - min;
+        const s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
+        let h = max === r ? (g - b) / d + (g < b ? 6 : 0) : max === g ? (b - r) / d + 2 : (r - g) / d + 4;
+        return [h / 6, s, l];
+    }
+
+    function hslToRgb(h, s, l) {
+        if (!s) return [l * 255, l * 255, l * 255];
+        const q = l < 0.5 ? l * (1 + s) : l + s - l * s;
+        const p = 2 * l - q;
+        const f = (t) => {
+            t = (t + 1) % 1;
+            if (t < 1 / 6) return p + (q - p) * 6 * t;
+            if (t < 1 / 2) return q;
+            if (t < 2 / 3) return p + (q - p) * (2 / 3 - t) * 6;
+            return p;
+        };
+        return [f(h + 1 / 3) * 255, f(h) * 255, f(h - 1 / 3) * 255];
+    }
+
+    // As 3 cores que mais marcam a capa: agrupa os pixels por matiz (os
+    // cinzentos num grupo à parte), dá mais peso aos saturados e deixa as
+    // cores com brilho bom pra luz de fundo. Capa de uma cor só: as outras
+    // saem dela, girando um pouco a matiz.
+    function extractPalette(img) {
+        const S = 32;
+        const cv = document.createElement("canvas");
+        cv.width = cv.height = S;
+        const c = cv.getContext("2d", { willReadFrequently: true });
+        c.drawImage(img, 0, 0, S, S);
+        const d = c.getImageData(0, 0, S, S).data; // capa sem CORS: SecurityError
+        const groups = new Map();
+        for (let k = 0; k < d.length; k += 4) {
+            if (d[k + 3] < 128) continue;
+            const [h, sat, l] = rgbToHsl(d[k], d[k + 1], d[k + 2]);
+            if (l < 0.07 || l > 0.96) continue;
+            const key = sat < 0.18 ? "gray" : Math.floor(h * 12);
+            const gr = groups.get(key) || { n: 0, r: 0, g: 0, b: 0, score: 0 };
+            gr.n++;
+            gr.r += d[k];
+            gr.g += d[k + 1];
+            gr.b += d[k + 2];
+            gr.score += 0.3 + sat;
+            groups.set(key, gr);
+        }
+        const picked = [...groups.values()]
+            .sort((a, b) => b.score - a.score)
+            .slice(0, 3)
+            .map((gr) => {
+                const [h, sat, l] = rgbToHsl(gr.r / gr.n, gr.g / gr.n, gr.b / gr.n);
+                const vivid = sat < 0.18 ? sat : Math.max(sat, 0.5);
+                return hslToRgb(h, vivid, Math.min(0.62, Math.max(0.45, l)));
+            });
+        if (!picked.length) return null; // capa toda preta/branca: fica com as cores do tema
+        while (picked.length < 3) {
+            const [h, sat, l] = rgbToHsl(...picked[0]);
+            picked.push(hslToRgb(h + (picked.length === 1 ? 0.08 : -0.08), sat, l));
+        }
+        return picked;
+    }
+
+    function defaultPalette(c, accent) {
+        return [toRgb(c, accent), [167, 139, 250], [45, 212, 191]];
+    }
+
+    // Lê as cores da capa (uma vez por capa). A capa que aparece na tela é
+    // outra <img>, sem crossOrigin — se esta falhar, só o fundo fica com as
+    // cores do tema.
+    function ensurePalette(url) {
+        if (url === palKey) return;
+        palKey = url;
+        palTarget = null;
+        if (!url) return;
+        const img = new Image();
+        img.crossOrigin = "anonymous";
+        img.onload = () => {
+            if (palKey !== url) return;
+            try {
+                palTarget = extractPalette(img);
+            } catch (err) {
+                console.warn("Descanso de tela: não deu pra ler as cores da capa —", err && err.message);
+            }
+            if (reduceMotion && palTarget) {
+                palCurrent = palTarget.map((x) => x.slice());
+                requestAnimationFrame(frame);
+            }
+        };
+        img.onerror = () => {
+            if (palKey === url) console.warn("Descanso de tela: capa não carregou pra ler as cores (CORS?) —", url);
+        };
+        // URL própria: a cópia que a tela já carregou (sem CORS) pode estar no
+        // cache sem o cabeçalho Access-Control-Allow-Origin e travar a leitura.
+        img.src = /^https?:/.test(url) ? url + (url.includes("?") ? "&" : "?") + "ss-cores=1" : url;
     }
 
     // ---------- Estilos ----------
@@ -353,15 +469,24 @@
                 [38, 62],
                 [36, 58]
             ],
+            // f.palette: 3 cores [r, g, b] (as da capa, ou as do tema).
             draw(c, w, h, f) {
                 const t = f.time;
-                c.fillStyle = "#04060b";
+                const pal = f.palette;
+                // Fundo: quase preto, puxado de leve pra cor principal.
+                c.fillStyle = rgba(mixRgb([4, 6, 11], pal[0], 0.07), 1);
                 c.fillRect(0, 0, w, h);
+                // Cada luz passeia devagar entre duas cores da paleta (~2,5 min).
                 const blobs = [
-                    [f.accent, 0.11, 0.07, 0],
-                    ["#a78bfa", 0.08, 0.1, 2.1],
-                    ["#2dd4bf", 0.06, 0.09, 4.3]
-                ];
+                    [0, 0.11, 0.07, 0],
+                    [1, 0.08, 0.1, 2.1],
+                    [2, 0.06, 0.09, 4.3]
+                ].map(([k, sx, sy, ph]) => [
+                    mixRgb(pal[k], pal[(k + 1) % 3], 0.5 + 0.5 * Math.sin(t * 0.04 + k * 2.1)),
+                    sx,
+                    sy,
+                    ph
+                ]);
                 const base = Math.max(w, h) * 0.5;
                 const alpha = f.playing ? 0.2 : 0.1;
                 c.globalCompositeOperation = "lighter";
@@ -370,8 +495,8 @@
                     const y = h * (0.5 + 0.34 * Math.cos(t * sy + ph * 1.7));
                     const r = base * (1 + 0.08 * Math.sin(t * 0.35 + ph)); // "respira" devagar
                     const g = c.createRadialGradient(x, y, 0, x, y, r);
-                    g.addColorStop(0, withAlpha(c, color, alpha));
-                    g.addColorStop(1, withAlpha(c, color, 0));
+                    g.addColorStop(0, rgba(color, alpha));
+                    g.addColorStop(1, rgba(color, 0));
                     c.fillStyle = g;
                     c.fillRect(0, 0, w, h);
                 }
@@ -405,8 +530,23 @@
 
         if (style.analyze === false) {
             modeEl.textContent = "";
+            ensurePalette(i.art || "");
+            const target = palTarget || defaultPalette(ctx2d, accent);
+            if (!palCurrent) palCurrent = defaultPalette(ctx2d, accent);
+            // Troca de capa: as cores chegam nas novas em uns 5 segundos.
+            const k = Math.min(1, dt * 0.6);
+            palCurrent = palCurrent.map((col, n) => mixRgb(col, target[n], k));
             ctx2d.clearRect(0, 0, w, h);
-            style.draw(ctx2d, w, h, { levels, peaks, wave: null, accent, playing, synced: false, time: now / 1000 });
+            style.draw(ctx2d, w, h, {
+                levels,
+                peaks,
+                wave: null,
+                accent,
+                playing,
+                synced: false,
+                time: now / 1000,
+                palette: palCurrent
+            });
             return;
         }
         let target = null;
@@ -470,6 +610,8 @@
         peaks.fill(0);
         lastFrame = 0;
         lastDraw = 0;
+        palKey = "";
+        palTarget = palCurrent = null;
         // Movimento reduzido: um quadro só (o fundo fica parado).
         reduceMotion = !!(window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches);
         rafId = requestAnimationFrame(frame);
@@ -496,6 +638,8 @@
         pcm = null;
         pcmLoadingKey = "";
         pcmFailedKey = "";
+        palKey = "";
+        palTarget = palCurrent = null;
         if (enteredFullscreen && document.fullscreenElement && document.exitFullscreen) {
             document.exitFullscreen().catch(() => {});
         }

@@ -1401,21 +1401,46 @@ select.input { cursor: pointer; -webkit-appearance: auto; appearance: auto; }
 .screensaver__hint.is-hidden { opacity: 0; }
 .screensaver__date { display: none; }
 
-/* Estilo "Suave": relógio grande no centro, o que toca embaixo, sem capa. */
+/* Estilo "Suave": relógio grande no centro e, embaixo, a capa ao lado do
+   que toca. O bloco é uma grade; o .screensaver__text "some" (contents)
+   pra relógio, data, título e subtítulo virarem células dela. */
 .screensaver--calm .screensaver__info {
     left: 50%;
     top: 46%;
     transform: translate(-50%, -50%);
     width: min(88vw, 620px);
     max-width: none;
+    display: grid;
+    grid-template-columns: auto minmax(0, max-content);
+    grid-template-areas:
+        "clock clock"
+        "date  date"
+        "art   title"
+        "art   sub";
     justify-content: center;
-    text-align: center;
+    column-gap: var(--sp-4);
+    row-gap: 2px;
     transition: left 10s ease-in-out, top 10s ease-in-out;
 }
-.screensaver--calm .screensaver__art { display: none; }
-.screensaver--calm .screensaver__text { display: flex; flex-direction: column; align-items: center; width: 100%; }
+/* Sem capa: uma coluna só, tudo centralizado. */
+.screensaver--calm .screensaver__info:has(.screensaver__art[hidden]) {
+    grid-template-columns: minmax(0, max-content);
+    grid-template-areas: "clock" "date" "title" "sub";
+    text-align: center;
+}
+.screensaver--calm .screensaver__text { display: contents; }
+.screensaver--calm .screensaver__art {
+    grid-area: art;
+    align-self: center;
+    width: clamp(64px, 18vw, 96px);
+    height: clamp(64px, 18vw, 96px);
+    border-radius: var(--r);
+    opacity: 0.85;
+    box-shadow: 0 8px 30px rgba(0, 0, 0, 0.5);
+}
 .screensaver--calm .screensaver__clock {
-    order: 0;
+    grid-area: clock;
+    justify-self: center;
     margin: 0;
     font-size: clamp(4.5rem, 24vw, 10rem);
     font-weight: 200;
@@ -1425,20 +1450,21 @@ select.input { cursor: pointer; -webkit-appearance: auto; appearance: auto; }
 }
 .screensaver--calm .screensaver__date {
     display: block;
-    order: 1;
+    grid-area: date;
+    justify-self: center;
     margin: var(--sp-2) 0 var(--sp-6, 32px);
     font-size: var(--fs-md);
     color: #64748b;
 }
 .screensaver--calm .screensaver__date::first-letter { text-transform: uppercase; }
 .screensaver--calm .screensaver__title {
-    order: 2;
-    max-width: 100%;
+    grid-area: title;
+    align-self: end;
     font-size: clamp(1.05rem, 4.6vw, 1.4rem);
     font-weight: 500;
     color: #cbd5e1;
 }
-.screensaver--calm .screensaver__sub { order: 3; max-width: 100%; color: #64748b; }
+.screensaver--calm .screensaver__sub { grid-area: sub; align-self: start; color: #94a3b8; }
 .screensaver--calm .screensaver__hint { top: auto; bottom: 10%; transform: translateX(-50%); }
 .player__row--tools { justify-content: flex-start; }
 .presence-box { display: flex; flex-direction: column; gap: var(--sp-2); font-size: var(--fs-sm); }
