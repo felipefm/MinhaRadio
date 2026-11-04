@@ -1403,40 +1403,46 @@ select.input { cursor: pointer; -webkit-appearance: auto; appearance: auto; }
 
 /* Estilo "Suave": relógio grande no centro e, embaixo, a capa ao lado do
    que toca. O bloco é uma grade; o .screensaver__text "some" (contents)
-   pra relógio, data, título e subtítulo virarem células dela. */
+   pra relógio, data, título e subtítulo virarem células dela. As colunas
+   1fr das pontas ficam com a sobra de largura (o relógio é largo): assim a
+   capa e o texto ficam juntos, centralizados. */
 .screensaver--calm .screensaver__info {
     left: 50%;
     top: 46%;
     transform: translate(-50%, -50%);
-    width: min(88vw, 620px);
+    width: min(92vw, 760px);
     max-width: none;
     display: grid;
-    grid-template-columns: auto minmax(0, max-content);
+    grid-template-columns: 1fr auto minmax(0, max-content) 1fr;
     grid-template-areas:
-        "clock clock"
-        "date  date"
-        "art   title"
-        "art   sub";
-    justify-content: center;
-    column-gap: var(--sp-4);
-    row-gap: 2px;
+        "clock clock clock clock"
+        "date  date  date  date"
+        ".     art   title ."
+        ".     art   sub   .";
+    column-gap: 0;
+    row-gap: 4px;
     transition: left 10s ease-in-out, top 10s ease-in-out;
 }
-/* Sem capa: uma coluna só, tudo centralizado. */
+/* Sem capa: tudo centralizado. */
 .screensaver--calm .screensaver__info:has(.screensaver__art[hidden]) {
-    grid-template-columns: minmax(0, max-content);
-    grid-template-areas: "clock" "date" "title" "sub";
+    grid-template-columns: 1fr minmax(0, max-content) 1fr;
+    grid-template-areas:
+        "clock clock clock"
+        "date  date  date"
+        ".     title ."
+        ".     sub   .";
     text-align: center;
 }
 .screensaver--calm .screensaver__text { display: contents; }
 .screensaver--calm .screensaver__art {
     grid-area: art;
     align-self: center;
-    width: clamp(64px, 18vw, 96px);
-    height: clamp(64px, 18vw, 96px);
+    width: clamp(96px, min(28vw, 26vh), 180px);
+    height: clamp(96px, min(28vw, 26vh), 180px);
+    margin-right: var(--sp-4);
     border-radius: var(--r);
-    opacity: 0.85;
-    box-shadow: 0 8px 30px rgba(0, 0, 0, 0.5);
+    opacity: 0.9;
+    box-shadow: 0 10px 36px rgba(0, 0, 0, 0.55);
 }
 .screensaver--calm .screensaver__clock {
     grid-area: clock;
@@ -1457,14 +1463,28 @@ select.input { cursor: pointer; -webkit-appearance: auto; appearance: auto; }
     color: #64748b;
 }
 .screensaver--calm .screensaver__date::first-letter { text-transform: uppercase; }
+/* Nome inteiro, quebrando linha; só corta se passar de 3 linhas. */
 .screensaver--calm .screensaver__title {
     grid-area: title;
     align-self: end;
-    font-size: clamp(1.05rem, 4.6vw, 1.4rem);
+    font-size: clamp(1.1rem, 4.8vw, 1.6rem);
     font-weight: 500;
+    line-height: 1.25;
     color: #cbd5e1;
+    -webkit-line-clamp: 3;
+    text-wrap: balance;
 }
-.screensaver--calm .screensaver__sub { grid-area: sub; align-self: start; color: #94a3b8; }
+.screensaver--calm .screensaver__sub {
+    grid-area: sub;
+    align-self: start;
+    margin-top: 2px;
+    color: #94a3b8;
+    white-space: normal;
+    overflow: hidden;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+}
 .screensaver--calm .screensaver__hint { top: auto; bottom: 10%; transform: translateX(-50%); }
 .player__row--tools { justify-content: flex-start; }
 .presence-box { display: flex; flex-direction: column; gap: var(--sp-2); font-size: var(--fs-sm); }
