@@ -1265,6 +1265,68 @@ select.input { cursor: pointer; -webkit-appearance: auto; appearance: auto; }
 .car-mode__fav:active { transform: scale(0.94); }
 .car-mode__fav.is-fav { color: var(--danger); border-color: var(--danger); }
 
+/* Modo Carro: Rádios / Biblioteca no espaço dos presets. */
+.car-mode__source { display: flex; gap: var(--sp-2); margin-bottom: var(--sp-2); flex-shrink: 0; }
+.car-mode__source-btn,
+.car-mode__chip {
+    appearance: none;
+    flex: 1;
+    min-height: 48px;
+    border-radius: var(--r);
+    border: 1px solid var(--border-strong);
+    background: var(--surface);
+    color: var(--text);
+    font: inherit;
+    font-size: var(--fs-sm);
+    font-weight: 700;
+    cursor: pointer;
+}
+.car-mode__source-btn.is-active { background: var(--accent-soft); border-color: var(--accent); color: var(--accent); }
+.car-mode__source-btn:active,
+.car-mode__chip:active { transform: scale(0.96); }
+.car-mode__chip:disabled { opacity: 0.4; cursor: not-allowed; }
+.car-mode__chip.is-active { border-color: var(--accent); color: var(--accent); }
+.car-mode__panel { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.car-mode__lib-actions { display: flex; gap: var(--sp-2); margin-bottom: var(--sp-3); flex-shrink: 0; }
+.car-mode__queue {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+    display: flex;
+    flex-direction: column;
+    gap: var(--sp-1);
+    padding-bottom: calc(var(--sp-4) + env(safe-area-inset-bottom));
+}
+.car-queue-row {
+    appearance: none;
+    display: flex;
+    align-items: center;
+    gap: var(--sp-3);
+    width: 100%;
+    min-height: 60px;
+    padding: var(--sp-2) var(--sp-3);
+    border-radius: var(--r);
+    border: 1px solid var(--border);
+    background: var(--surface);
+    color: var(--text);
+    font: inherit;
+    text-align: left;
+    cursor: pointer;
+    flex-shrink: 0;
+}
+.car-queue-row:active { transform: scale(0.98); }
+.car-queue-row__num { min-width: 2em; font-size: var(--fs-xs); font-weight: 800; color: var(--text-faint); text-align: center; }
+.car-queue-row__text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.car-queue-row__text b,
+.car-queue-row__text span { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.car-queue-row__text b { font-size: 0.95rem; font-weight: 700; }
+.car-queue-row__text span { font-size: var(--fs-xs); color: var(--text-muted); font-weight: 600; }
+.car-queue-row.is-played { opacity: 0.55; }
+.car-queue-row.is-active { background: var(--accent-soft); border-color: var(--accent); opacity: 1; }
+.car-queue-row.is-active b,
+.car-queue-row.is-active .car-queue-row__num { color: var(--accent); }
+
 /* Tela cheia: sobe tudo ~10px. A margem da câmera (safe-area) continua. */
 :root:fullscreen .car-mode__top { padding-top: 2px; }
 .player__queue-status { font-size: var(--fs-sm); font-weight: 600; color: var(--text-muted); margin-left: auto; }
@@ -1337,6 +1399,47 @@ select.input { cursor: pointer; -webkit-appearance: auto; appearance: auto; }
     transition: opacity 0.8s ease;
 }
 .screensaver__hint.is-hidden { opacity: 0; }
+.screensaver__date { display: none; }
+
+/* Estilo "Suave": relógio grande no centro, o que toca embaixo, sem capa. */
+.screensaver--calm .screensaver__info {
+    left: 50%;
+    top: 46%;
+    transform: translate(-50%, -50%);
+    width: min(88vw, 620px);
+    max-width: none;
+    justify-content: center;
+    text-align: center;
+    transition: left 10s ease-in-out, top 10s ease-in-out;
+}
+.screensaver--calm .screensaver__art { display: none; }
+.screensaver--calm .screensaver__text { display: flex; flex-direction: column; align-items: center; width: 100%; }
+.screensaver--calm .screensaver__clock {
+    order: 0;
+    margin: 0;
+    font-size: clamp(4.5rem, 24vw, 10rem);
+    font-weight: 200;
+    line-height: 1;
+    letter-spacing: -0.02em;
+    color: #e2e8f0;
+}
+.screensaver--calm .screensaver__date {
+    display: block;
+    order: 1;
+    margin: var(--sp-2) 0 var(--sp-6, 32px);
+    font-size: var(--fs-md);
+    color: #64748b;
+}
+.screensaver--calm .screensaver__date::first-letter { text-transform: uppercase; }
+.screensaver--calm .screensaver__title {
+    order: 2;
+    max-width: 100%;
+    font-size: clamp(1.05rem, 4.6vw, 1.4rem);
+    font-weight: 500;
+    color: #cbd5e1;
+}
+.screensaver--calm .screensaver__sub { order: 3; max-width: 100%; color: #64748b; }
+.screensaver--calm .screensaver__hint { top: auto; bottom: 10%; transform: translateX(-50%); }
 .player__row--tools { justify-content: flex-start; }
 .presence-box { display: flex; flex-direction: column; gap: var(--sp-2); font-size: var(--fs-sm); }
 .presence-box:empty { display: none; }

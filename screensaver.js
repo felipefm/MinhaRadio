@@ -13,6 +13,9 @@
    - rádio (a página não pode ler o áudio dela): animação que não segue a
      música, com o mesmo visual.
 
+   Exceção: o estilo "Suave" não segue a música — só relógio, o que toca
+   e um fundo calmo (bom pra deixar ligado no trabalho).
+
    Estilos: cada um em STYLES, recebendo os níveis já suavizados — pra
    criar outro, é só acrescentar uma entrada (aparece nas Configurações).
 
@@ -34,6 +37,7 @@
     let titleEl = null;
     let subEl = null;
     let clockEl = null;
+    let dateEl = null;
     let modeEl = null;
     let hintEl = null;
 
@@ -49,6 +53,8 @@
     const peaks = new Float32Array(BARS);
     const peakHold = new Float32Array(BARS);
     let lastFrame = 0;
+    let lastDraw = 0;
+    let reduceMotion = false;
 
     // Análise da faixa atual (modo sincronizado).
     let pcm = null; // { key, data: Float32Array mono, rate }
@@ -124,6 +130,7 @@
         root.className = "screensaver";
         root.setAttribute("role", "dialog");
         root.setAttribute("aria-label", "Descanso de tela. Toque para sair.");
+        if (style.layout) root.classList.add("screensaver--" + style.layout);
 
         canvas = document.createElement("canvas");
         canvas.className = "screensaver__canvas";
@@ -143,7 +150,9 @@
         subEl.className = "screensaver__sub";
         clockEl = document.createElement("div");
         clockEl.className = "screensaver__clock";
-        text.append(titleEl, subEl, clockEl);
+        dateEl = document.createElement("div");
+        dateEl.className = "screensaver__date";
+        text.append(titleEl, subEl, clockEl, dateEl);
         infoEl.append(artEl, text);
 
         modeEl = document.createElement("div");
@@ -181,14 +190,16 @@
     function tickClock() {
         const d = new Date();
         clockEl.textContent = String(d.getHours()).padStart(2, "0") + ":" + String(d.getMinutes()).padStart(2, "0");
+        dateEl.textContent = d.toLocaleDateString("pt-BR", { weekday: "long", day: "numeric", month: "long" });
         updateInfo();
     }
 
     // Leva o bloco de informações pra outro ponto da tela (anti-marcação).
     function drift() {
         if (!infoEl) return;
-        const x = 6 + Math.random() * 40; // % da largura livre
-        const y = 6 + Math.random() * 18; // % da altura: fica no alto; onda e barras ficam da metade pra baixo
+        const [[x0, x1], [y0, y1]] = style.drift || DEFAULT_DRIFT;
+        const x = x0 + Math.random() * (x1 - x0);
+        const y = y0 + Math.random() * (y1 - y0);
         infoEl.style.left = x + "%";
         infoEl.style.top = y + "%";
     }
@@ -258,10 +269,36 @@
         return out;
     }
 
+    // Cor CSS qualquer (a de destaque vem do tema) com outra opacidade —
+    // o canvas devolve a cor normalizada em #rrggbb.
+    const rgbaCache = {};
+    function withAlpha(c, color, a) {
+        if (!rgbaCache[color]) {
+            c.fillStyle = "#000";
+            c.fillStyle = color;
+            const hex = String(c.fillStyle);
+            const m = /^#([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i.exec(hex);
+            // Cor com transparência o canvas devolve como rgba(r, g, b, a).
+            const n = !m && /^rgba?\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)/i.exec(hex);
+            if (m) rgbaCache[color] = [parseInt(m[1], 16), parseInt(m[2], 16), parseInt(m[3], 16)];
+            else if (n) rgbaCache[color] = [+n[1], +n[2], +n[3]];
+            else throw new Error("Descanso de tela: cor inválida — " + color);
+        }
+        const [r, g, b] = rgbaCache[color];
+        return `rgba(${r},${g},${b},${a})`;
+    }
+
     // ---------- Estilos ----------
     // draw(c, w, h, f): c = contexto 2D já limpo; f = { levels, peaks (0..1
     // por barra), wave (amostras da onda ou null — só no sincronizado),
-    // accent (cor de destaque), playing, synced }.
+    // accent (cor de destaque), playing, synced, time (segundos) }.
+    // Opcionais: layout (classe screensaver--<layout> pro bloco de texto),
+    // analyze: false (não baixa/analisa a faixa), fps (limita os quadros),
+    // drift ([[x mín, x máx], [y mín, y máx]] em %, pra onde o texto passeia).
+    const DEFAULT_DRIFT = [
+        [6, 46], // % da largura livre
+        [6, 24] // % da altura: fica no alto; onda e barras ficam da metade pra baixo
+    ];
     const STYLES = {
         bars: {
             label: "Barras (Winamp)",
@@ -302,6 +339,44 @@
                     c.globalAlpha = 1;
                 }
             }
+        },
+
+        // Pra deixar ligado no trabalho: relógio grande, o que toca embaixo e
+        // um fundo de luzes bem fracas que se movem devagar. Não segue a
+        // música (não baixa nem analisa nada) e desenha poucos quadros.
+        calm: {
+            label: "Suave (relógio)",
+            layout: "calm",
+            analyze: false,
+            fps: 15,
+            drift: [
+                [38, 62],
+                [36, 58]
+            ],
+            draw(c, w, h, f) {
+                const t = f.time;
+                c.fillStyle = "#04060b";
+                c.fillRect(0, 0, w, h);
+                const blobs = [
+                    [f.accent, 0.11, 0.07, 0],
+                    ["#a78bfa", 0.08, 0.1, 2.1],
+                    ["#2dd4bf", 0.06, 0.09, 4.3]
+                ];
+                const base = Math.max(w, h) * 0.5;
+                const alpha = f.playing ? 0.2 : 0.1;
+                c.globalCompositeOperation = "lighter";
+                for (const [color, sx, sy, ph] of blobs) {
+                    const x = w * (0.5 + 0.38 * Math.sin(t * sx + ph));
+                    const y = h * (0.5 + 0.34 * Math.cos(t * sy + ph * 1.7));
+                    const r = base * (1 + 0.08 * Math.sin(t * 0.35 + ph)); // "respira" devagar
+                    const g = c.createRadialGradient(x, y, 0, x, y, r);
+                    g.addColorStop(0, withAlpha(c, color, alpha));
+                    g.addColorStop(1, withAlpha(c, color, 0));
+                    c.fillStyle = g;
+                    c.fillRect(0, 0, w, h);
+                }
+                c.globalCompositeOperation = "source-over";
+            }
         }
     };
     const DEFAULT_STYLE = "bars";
@@ -315,13 +390,25 @@
     }
 
     function frame(now) {
-        rafId = requestAnimationFrame(frame);
+        if (!reduceMotion) rafId = requestAnimationFrame(frame);
         if (!provider || !ctx2d) return;
+        if (style.fps && lastDraw && now - lastDraw < 1000 / style.fps - 2) return;
+        lastDraw = now;
         const dt = lastFrame ? Math.min(0.1, (now - lastFrame) / 1000) : 0.016;
         lastFrame = now;
 
         const i = provider.info() || {};
         const playing = !!i.playing;
+        const w = canvas.width;
+        const h = canvas.height;
+        const accent = getComputedStyle(root).getPropertyValue("--ss-accent").trim() || "#38bdf8";
+
+        if (style.analyze === false) {
+            modeEl.textContent = "";
+            ctx2d.clearRect(0, 0, w, h);
+            style.draw(ctx2d, w, h, { levels, peaks, wave: null, accent, playing, synced: false, time: now / 1000 });
+            return;
+        }
         let target = null;
         let wave = null;
 
@@ -362,11 +449,8 @@
             }
         }
 
-        const w = canvas.width;
-        const h = canvas.height;
         ctx2d.clearRect(0, 0, w, h);
-        const accent = getComputedStyle(root).getPropertyValue("--ss-accent").trim() || "#38bdf8";
-        style.draw(ctx2d, w, h, { levels, peaks, wave, accent, playing, synced });
+        style.draw(ctx2d, w, h, { levels, peaks, wave, accent, playing, synced, time: now / 1000 });
     }
 
     // ---------- Abrir / fechar ----------
@@ -385,8 +469,10 @@
         levels.fill(0);
         peaks.fill(0);
         lastFrame = 0;
-        const reduce = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-        if (!reduce) rafId = requestAnimationFrame(frame);
+        lastDraw = 0;
+        // Movimento reduzido: um quadro só (o fundo fica parado).
+        reduceMotion = !!(window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches);
+        rafId = requestAnimationFrame(frame);
         setTimeout(() => hintEl && hintEl.classList.add("is-hidden"), 3000);
 
         enteredFullscreen = false;
@@ -405,7 +491,7 @@
         clearInterval(driftTimer);
         window.removeEventListener("resize", resize);
         root.remove();
-        root = canvas = ctx2d = infoEl = artEl = titleEl = subEl = clockEl = modeEl = hintEl = null;
+        root = canvas = ctx2d = infoEl = artEl = titleEl = subEl = clockEl = dateEl = modeEl = hintEl = null;
         // Libera a análise (dezenas de MB) — refaz se abrir de novo.
         pcm = null;
         pcmLoadingKey = "";

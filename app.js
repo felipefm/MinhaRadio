@@ -114,6 +114,14 @@
     const carElapsed = $("carElapsed");
     const carDuration = $("carDuration");
     const carFavButton = $("carFavButton");
+    const carSourceTabs = $("carSourceTabs");
+    const carRadioPanel = $("carRadioPanel");
+    const carLibraryPanel = $("carLibraryPanel");
+    const carShuffleButton = $("carShuffleButton");
+    const carFavoritesButton = $("carFavoritesButton");
+    const carMixButton = $("carMixButton");
+    const carQueueTitle = $("carQueueTitle");
+    const carQueueList = $("carQueueList");
 
     // ---------- Estado ----------
     const LS = {
@@ -171,7 +179,13 @@
 
     // Minha biblioteca (Jellyfin). Uma faixa toca pelo mesmo caminho de uma
     // rádio: vira um objeto "estação" com kind: "track" (ver trackToStation).
-    let queue = { items: [], index: -1 };
+    // refill: quando a fila acaba, monta outra (aleatório/favoritas do
+    // Modo Carro, pra música não parar no meio da estrada).
+    let queue = { items: [], index: -1, refill: null, label: "" };
+    // Modo Carro: o que aparece no lugar dos presets ("radio" | "library").
+    let carSource = "radio";
+    let carLastKind = "";
+    let carQueueRendered = null;
     let libStack = [];
     let libToken = 0;
     const libHomeCache = {};
@@ -1105,7 +1119,7 @@
             playButton.disabled = false;
             playButton.textContent = playing ? "❚❚" : "▶";
             playButton.setAttribute("aria-label", playing ? "Pausar" : "Tocar");
-            stopButton.disabled = queue.index >= queue.items.length - 1;
+            stopButton.disabled = queue.index >= queue.items.length - 1 && !queue.refill;
             stopButton.textContent = "⏭";
             stopButton.setAttribute("aria-label", "Próxima faixa");
             refreshQueueStatus();
@@ -1350,8 +1364,82 @@
         carPrevButton.setAttribute("aria-label", track ? "Faixa anterior" : "Estação anterior");
         carNextButton.setAttribute("aria-label", track ? "Próxima faixa" : "Próxima estação");
 
+        // Começou a tocar outra coisa (faixa <-> rádio): mostra a lista dela.
+        const kind = currentStation ? (track ? "library" : "radio") : "";
+        if (kind && kind !== carLastKind && libraryReady()) setCarSource(kind);
+        carLastKind = kind || carLastKind;
+        carMixButton.disabled = !track;
+
         refreshCarPresetActive();
+        renderCarQueue();
         updateTrackProgress();
+    }
+
+    function libraryReady() {
+        return !!(window.Jellyfin && window.Jellyfin.isConfigured());
+    }
+
+    // Rádios (presets) ou Biblioteca (fila de músicas) no fim da tela.
+    function setCarSource(source) {
+        carSource = libraryReady() && source === "library" ? "library" : "radio";
+        carSourceTabs.hidden = !libraryReady();
+        carSourceTabs.querySelectorAll("[data-source]").forEach((b) => {
+            const on = b.dataset.source === carSource;
+            b.classList.toggle("is-active", on);
+            b.setAttribute("aria-pressed", String(on));
+        });
+        carRadioPanel.hidden = carSource !== "radio";
+        carLibraryPanel.hidden = carSource !== "library";
+        if (carSource === "library") renderCarQueue(true);
+    }
+
+    // Fila no Modo Carro. Só redesenha se a fila mudou; senão, só marca a atual.
+    function renderCarQueue(force) {
+        if (carModeScreen.hidden || carLibraryPanel.hidden) return;
+        const index = isTrack(currentStation) ? queue.index : -1;
+        const pos = queue.items.length && index > -1 ? ` · ${index + 1} de ${queue.items.length}` : "";
+        carQueueTitle.textContent = (queue.label || "Fila") + pos + (queue.refill ? " · sem fim" : "");
+        carShuffleButton.classList.toggle("is-active", queue.label === "Aleatório");
+        carFavoritesButton.classList.toggle("is-active", queue.label === "Favoritas");
+
+        if (force || !carQueueRendered || carQueueRendered.items !== queue.items) {
+            carQueueList.innerHTML = "";
+            carQueueRendered = { items: queue.items, index: -2 };
+            if (!queue.items.length) {
+                emptyState(carQueueList, "Toque em 🔀 Aleatório ou ❤ Favoritas para começar.");
+                return;
+            }
+            const frag = document.createDocumentFragment();
+            queue.items.forEach((item, i) => {
+                const b = document.createElement("button");
+                b.type = "button";
+                b.className = "car-queue-row";
+                const num = document.createElement("span");
+                num.className = "car-queue-row__num";
+                num.textContent = String(i + 1);
+                const text = document.createElement("span");
+                text.className = "car-queue-row__text";
+                const t = document.createElement("b");
+                t.textContent = item.Name || "Sem título";
+                const sub = document.createElement("span");
+                sub.textContent = [item.AlbumArtist || (item.Artists || []).join(", "), formatDuration(item.RunTimeTicks)]
+                    .filter(Boolean)
+                    .join(" · ");
+                text.append(t, sub);
+                b.append(num, text);
+                b.addEventListener("click", () => playQueueIndex(i));
+                frag.appendChild(b);
+            });
+            carQueueList.appendChild(frag);
+        }
+        if (carQueueRendered.index === index) return;
+        carQueueRendered.index = index;
+        const rows = carQueueList.children;
+        for (let i = 0; i < rows.length; i++) {
+            rows[i].classList.toggle("is-active", i === index);
+            rows[i].classList.toggle("is-played", index > -1 && i < index);
+        }
+        if (rows[index]) rows[index].scrollIntoView({ block: "nearest" });
     }
 
     function setArtImage(el, url) {
@@ -1748,6 +1836,9 @@
         document.body.style.overflow = "hidden";
         requestCarFullscreen();
         pushOverlayState("car");
+        carQueueRendered = null;
+        carLastKind = "";
+        setCarSource(isTrack(currentStation) ? "library" : "radio");
         updateCarModeUI();
         loadCarPresets();
         tickCarClock();
@@ -1848,7 +1939,7 @@
         screensaverSetting.innerHTML = "";
         const p = document.createElement("p");
         p.textContent =
-            "Abra pelo 🌌 no Modo Carro ou no painel do player (▴). Toque na tela para sair. Nas músicas da biblioteca as barras seguem a música; nas rádios, é uma animação.";
+            "Abra pelo 🌌 no Modo Carro ou no painel do player (▴). Toque na tela para sair. Barras: nas músicas da biblioteca seguem a música; nas rádios, é uma animação. Suave: relógio grande e o que toca, com fundo calmo — não baixa nada a mais.";
         screensaverSetting.appendChild(p);
         if (!S) return;
         const chips = document.createElement("div");
@@ -1871,7 +1962,7 @@
         });
         const hint = document.createElement("p");
         hint.textContent =
-            "Pra seguir a música, o app analisa o arquivo da faixa à parte — se ela ainda não estiver na memória (buffer), baixa de novo, gastando mais dados.";
+            "Barras: pra seguir a música, o app analisa o arquivo da faixa à parte — se ela ainda não estiver na memória (buffer), baixa de novo, gastando mais dados.";
         screensaverSetting.append(chips, hint);
     }
 
@@ -2105,13 +2196,13 @@
         return !!i && !!i.Id && (i.Type === "Audio" || i.MediaType === "Audio");
     }
 
-    function playQueue(items, start = 0, { shuffle = false } = {}) {
+    function playQueue(items, start = 0, { shuffle = false, refill = null, label = "" } = {}) {
         const list = uniqueTracks((items || []).filter(isAudioItem));
         if (!list.length) {
             showToast("Nada para tocar aqui.");
             return;
         }
-        queue = { items: shuffle ? shuffled(list) : list, index: -1 };
+        queue = { items: shuffle ? shuffled(list) : list, index: -1, refill, label };
         playQueueIndex(shuffle ? 0 : Math.max(0, Math.min(start, list.length - 1)));
     }
 
@@ -2230,7 +2321,7 @@
 
     // Sorteia a biblioteca toda: busca mais que o necessário, tira repetidas
     // e as que tocaram há pouco, e toca um lote. Acabou o lote, para.
-    async function shuffleAll() {
+    async function shuffleAll({ refill = null, label = "" } = {}) {
         showToast("Sorteando músicas…");
         try {
             const res = await window.Jellyfin.randomTracks(400);
@@ -2243,10 +2334,56 @@
                 const old = all.filter((i) => played.has(i.Id)).sort((a, b) => order.indexOf(a.Id) - order.indexOf(b.Id));
                 fresh = fresh.concat(old);
             }
-            playQueue(fresh.slice(0, 150));
+            playQueue(fresh.slice(0, 150), 0, { refill, label });
         } catch (err) {
             showToast(err.message || "Erro ao carregar.", 4000);
         }
+    }
+
+    // ---------- Modo Carro: atalhos da biblioteca ----------
+    // Aleatório e Favoritas não acabam: no fim da fila, sorteia de novo.
+    function carShuffle() {
+        return shuffleAll({ refill: carShuffle, label: "Aleatório" });
+    }
+
+    async function carFavorites() {
+        showToast("Carregando favoritas…");
+        try {
+            const res = await window.Jellyfin.favoriteTracks();
+            const items = ((res && res.Items) || []).filter(isAudioItem);
+            if (!items.length) {
+                showToast("Nenhuma música favorita ainda — toque no ♡ de uma música para marcar.", 4500);
+                return;
+            }
+            playQueue(items, 0, { shuffle: true, refill: carFavorites, label: "Favoritas" });
+        } catch (err) {
+            showToast(err.message || "Erro ao carregar.", 4000);
+        }
+    }
+
+    // Mix parecido com a música atual, sem repetir ela no começo.
+    async function carMix() {
+        if (!isTrack(currentStation)) return;
+        const seed = currentStation;
+        showToast("Montando mix…");
+        try {
+            const res = await window.Jellyfin.instantMix(seed.itemId);
+            const items = ((res && res.Items) || []).filter((i) => i.Id !== seed.itemId);
+            playQueue(items, 0, { label: "Mix: " + seed.name });
+        } catch (err) {
+            showToast(err.message || "Erro ao carregar.", 4000);
+        }
+    }
+
+    function refillQueue() {
+        const refill = queue.refill;
+        if (!refill) return false;
+        const before = queue.items;
+        // Não conseguiu montar outra (sem rede, sem favoritas): para, como no fim normal.
+        Promise.resolve(refill()).then(() => {
+            if (queue.items === before && audioPlayer.ended) stopStream();
+        });
+        return true;
     }
 
     // ---------- Favoritos (❤ do Jellyfin) ----------
@@ -2298,7 +2435,7 @@
         if (!queue.items.length) return;
         const next = queue.index + delta;
         if (next >= queue.items.length) {
-            showToast("Fim da fila.");
+            if (!refillQueue()) showToast("Fim da fila.");
             return;
         }
         playQueueIndex(Math.max(0, next));
@@ -2317,7 +2454,7 @@
     function onTrackEnded() {
         if (queue.index < queue.items.length - 1) {
             playQueueIndex(queue.index + 1);
-        } else {
+        } else if (!refillQueue()) {
             stopStream();
             showToast("Fim da fila. 🎵");
         }
@@ -3293,6 +3430,13 @@
         });
         carPrevButton.addEventListener("click", () => (isTrack(currentStation) ? queuePrev() : carStep(-1)));
         carNextButton.addEventListener("click", () => (isTrack(currentStation) ? queueStep(1) : carStep(1)));
+        carSourceTabs.addEventListener("click", (e) => {
+            const b = e.target.closest("[data-source]");
+            if (b) setCarSource(b.dataset.source);
+        });
+        carShuffleButton.addEventListener("click", carShuffle);
+        carFavoritesButton.addEventListener("click", carFavorites);
+        carMixButton.addEventListener("click", carMix);
         carArt.addEventListener("error", () => {
             carArt.hidden = true;
         });

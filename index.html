@@ -301,8 +301,23 @@
         </div>
 
         <div class="car-mode__presets">
-            <div class="car-mode__presets-title">🏆 Mais ouvidas <b>· ranking automático</b></div>
-            <div id="carPresetGrid" class="car-mode__grid"></div>
+            <div id="carSourceTabs" class="car-mode__source" role="group" aria-label="O que mostrar" hidden>
+                <button type="button" class="car-mode__source-btn" data-source="radio" aria-pressed="true">📻 Rádios</button>
+                <button type="button" class="car-mode__source-btn" data-source="library" aria-pressed="false">🎵 Biblioteca</button>
+            </div>
+            <div id="carRadioPanel" class="car-mode__panel">
+                <div class="car-mode__presets-title">🏆 Mais ouvidas <b>· ranking automático</b></div>
+                <div id="carPresetGrid" class="car-mode__grid"></div>
+            </div>
+            <div id="carLibraryPanel" class="car-mode__panel" hidden>
+                <div class="car-mode__lib-actions">
+                    <button id="carShuffleButton" class="car-mode__chip" type="button">🔀 Aleatório</button>
+                    <button id="carFavoritesButton" class="car-mode__chip" type="button">❤ Favoritas</button>
+                    <button id="carMixButton" class="car-mode__chip" type="button" disabled>🎲 Mix desta</button>
+                </div>
+                <div id="carQueueTitle" class="car-mode__presets-title">Fila</div>
+                <div id="carQueueList" class="car-mode__queue"></div>
+            </div>
         </div>
     </div>
 
