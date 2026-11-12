@@ -1820,10 +1820,13 @@
     // Android). Precisa de um toque do usuário — por isso é pedida ao abrir o
     // Modo Carro e de novo a cada toque nele, caso o sistema tenha saído da
     // tela cheia (ao alternar pro GPS, por exemplo). Não funciona no iPhone:
-    // o Safari não permite tela cheia fora de vídeos.
+    // o Safari não permite tela cheia fora de vídeos. No computador (mouse,
+    // sem toque) não entra em tela cheia — fica só a tela do Modo Carro.
+    const carFullscreenWanted = !!(window.matchMedia && matchMedia("(pointer: coarse)").matches);
+
     function requestCarFullscreen() {
         const el = document.documentElement;
-        if (carModeScreen.hidden || document.fullscreenElement || !el.requestFullscreen) return;
+        if (!carFullscreenWanted || carModeScreen.hidden || document.fullscreenElement || !el.requestFullscreen) return;
         el.requestFullscreen({ navigationUI: "hide" }).catch(() => {});
     }
 
